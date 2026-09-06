@@ -87,6 +87,8 @@ export interface SessionState {
   readonly availableExemptions: readonly ExemptionDefinition[]
   /** Mevcut tipte kullanılabilen tevkifat kodları. */
   readonly availableWithholdings: readonly WithholdingDefinition[]
+  /** İhracat oturumu mu; `IHRACAT` profilinin listede kalmasını belirler. */
+  readonly isExport: boolean
   /**
    * Oturumun mükellefiyet varsayımı; verilmemişse `undefined`.
    *
@@ -152,7 +154,57 @@ export interface InvoiceSessionOptions {
 }
 
 /** Durum değiştiğinde çağrılan dinleyici. */
-export type SessionListener = (state: SessionState) => void
+/**
+ * Durumu değiştiren işlemin ne olduğu.
+ *
+ * Tek bir durum dinleyicisi çoğu form için yeterlidir, ama bazı kararlar
+ * **neyin** değiştiğini bilmeyi gerektirir: bir satırın silinme animasyonu,
+ * tip değişince alanı sıfırlamak, önceki değere dönmeyi öneren bir "geri
+ * al" düğmesi.
+ *
+ * Her bildirimde `previousInput` bulunur; tip, profil ya da herhangi bir
+ * alanın önceki değeri buradan okunur. Ayrı bir olay yayıcı
+ * (`EventEmitter`) kullanılmadı — kütüphanenin çalışma zamanı bağımlılığı
+ * yoktur ve tarayıcıda da çalışır.
+ *
+ * @example Tip değişimini ve satır silmeyi yakalamak
+ * ```ts
+ * oturum.subscribe((state, degisim) => {
+ *   if (degisim.previousInput.type !== state.input.type) tipDegistiUyar()
+ *   if (degisim.kind === 'line-removed') satirSilmeAnimasyonu(degisim.index)
+ * })
+ * ```
+ */
+export type SessionChange = { readonly previousInput: InvoiceInput } & (
+  | { readonly kind: 'patch' }
+  | { readonly kind: 'cleared'; readonly keys: readonly ClearableField[] }
+  | { readonly kind: 'line-added'; readonly index: number }
+  | {
+      readonly kind: 'line-updated'
+      readonly index: number
+      readonly previousLine: InvoiceBuilderLineInput
+    }
+  | {
+      readonly kind: 'line-removed'
+      readonly index: number
+      readonly previousLine: InvoiceBuilderLineInput
+    }
+  | {
+      readonly kind: 'line-cleared'
+      readonly index: number
+      readonly keys: readonly ClearableLineField[]
+    }
+  | { readonly kind: 'lines-replaced' }
+  | { readonly kind: 'identifications-changed'; readonly party: IdentificationParty }
+)
+
+/**
+ * Durum değiştiğinde çağrılan dinleyici.
+ *
+ * İkinci parametre isteğe bağlıdır: `(state) => …` yazan bir dinleyici
+ * değişiklik ayrıntısını görmezden gelir ve çalışmayı sürdürür.
+ */
+export type SessionListener = (state: SessionState, change: SessionChange) => void
 
 /**
  * Bir nesneden verilen anahtarları çıkarır.
@@ -288,8 +340,9 @@ export class InvoiceSession {
    * ```
    */
   patch(patch: DeepPartial<InvoiceInput>): SessionState {
+    const previousInput = this.#input
     this.#input = merge(this.#input, patch)
-    return this.#update()
+    return this.#update({ kind: 'patch', previousInput })
   }
 
   /**
@@ -321,8 +374,9 @@ export class InvoiceSession {
   clear(...keys: readonly ClearableField[]): SessionState {
     const sonraki = omit(this.#input, keys)
     if (sonraki === undefined) return this.#state
+    const previousInput = this.#input
     this.#input = sonraki
-    return this.#update()
+    return this.#update({ kind: 'cleared', keys, previousInput })
   }
 
   /**
@@ -351,10 +405,11 @@ export class InvoiceSession {
     }
     const kalem = omit(mevcut, keys)
     if (kalem === undefined) return this.#state
+    const previousInput = this.#input
     const satirlar = [...this.#input.lines]
     satirlar[index] = kalem
     this.#input = { ...this.#input, lines: satirlar }
-    return this.#update()
+    return this.#update({ kind: 'line-cleared', index, keys, previousInput })
   }
 
   /**
@@ -420,8 +475,9 @@ export class InvoiceSession {
       identifications.length === 0
         ? (omit(taraf, ['identifications']) ?? taraf)
         : { ...taraf, identifications }
+    const previousInput = this.#input
     this.#input = { ...this.#input, [party]: yeni }
-    return this.#update()
+    return this.#update({ kind: 'identifications-changed', party, previousInput })
   }
 
   /**
@@ -436,8 +492,9 @@ export class InvoiceSession {
    * ```
    */
   addLine(line: InvoiceBuilderLineInput): SessionState {
+    const previousInput = this.#input
     this.#input = { ...this.#input, lines: [...this.#input.lines, line] }
-    return this.#update()
+    return this.#update({ kind: 'line-added', index: this.#input.lines.length - 1, previousInput })
   }
 
   /**
@@ -460,10 +517,11 @@ export class InvoiceSession {
         `Satır ${String(index)} yok; belgede ${String(this.#input.lines.length)} satır var.`,
       )
     }
+    const previousInput = this.#input
     const yeni = [...this.#input.lines]
     yeni[index] = merge(mevcut, patch)
     this.#input = { ...this.#input, lines: yeni }
-    return this.#update()
+    return this.#update({ kind: 'line-updated', index, previousLine: mevcut, previousInput })
   }
 
   /**
@@ -479,16 +537,18 @@ export class InvoiceSession {
    * ```
    */
   removeLine(index: number): SessionState {
-    if (this.#input.lines[index] === undefined) {
+    const previousLine = this.#input.lines[index]
+    if (previousLine === undefined) {
       throw new RangeError(
         `Satır ${String(index)} yok; belgede ${String(this.#input.lines.length)} satır var.`,
       )
     }
+    const previousInput = this.#input
     this.#input = {
       ...this.#input,
       lines: this.#input.lines.filter((_, i) => i !== index),
     }
-    return this.#update()
+    return this.#update({ kind: 'line-removed', index, previousLine, previousInput })
   }
 
   /**
@@ -503,8 +563,9 @@ export class InvoiceSession {
    * ```
    */
   setLines(lines: readonly InvoiceBuilderLineInput[]): SessionState {
+    const previousInput = this.#input
     this.#input = { ...this.#input, lines }
-    return this.#update()
+    return this.#update({ kind: 'lines-replaced', previousInput })
   }
 
   /**
@@ -552,9 +613,9 @@ export class InvoiceSession {
   }
 
   /** Durumu yeniden türetir ve dinleyicilere haber verir. */
-  #update(): SessionState {
+  #update(change: SessionChange): SessionState {
     this.#state = this.#derive()
-    for (const listener of this.#listeners) listener(this.#state)
+    for (const listener of this.#listeners) listener(this.#state, change)
     return this.#state
   }
 
@@ -563,6 +624,7 @@ export class InvoiceSession {
     const input = this.#input
     const liability = this.#options.liability
     const tables = this.#options.codeTables
+    const isExport = this.#options.isExport ?? false
     // `profile` ve `type` girdide zorunludur; yalnızca para birimi
     // isteğe bağlıdır ve verilmediğinde varsayılan Türk lirasıdır.
     const baglam = {
@@ -605,11 +667,8 @@ export class InvoiceSession {
       totals,
       fields,
       lineFields,
-      allowedProfiles: allowedProfilesForType(
-        input.type,
-        liability,
-        this.#options.isExport ?? false,
-      ),
+      allowedProfiles: allowedProfilesForType(input.type, liability, isExport),
+      isExport,
       allowedTypes: allowedTypesForProfile(input.profile, liability),
       liability,
       availableExemptions: availableExemptions(input.type, tables),

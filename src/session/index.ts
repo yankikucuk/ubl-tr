@@ -20,6 +20,7 @@ export {
   type DeepPartial,
   type IdentificationParty,
   type InvoiceSessionOptions,
+  type SessionChange,
   type SessionListener,
   type SessionState,
 } from './invoice-session.js'

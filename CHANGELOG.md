@@ -109,6 +109,12 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
     `YTB_TYPES` tip grupları
   - `session` katmanı üç kardeşi birden kullanan tek katmandır; ESLint
     kuralı hiçbir alt katmanın ona bağımlı olmasına izin vermez
+  - `SessionChange` — dinleyiciye değişikliğin ne olduğu ikinci parametreyle
+    gelir: `patch`, `cleared`, `line-added`, `line-updated`, `line-removed`,
+    `line-cleared`, `lines-replaced`, `identifications-changed`; her
+    bildirimde `previousInput`, satır işlemlerinde `index` ve
+    `previousLine`. `(state) => …` yazan dinleyici çalışmayı sürdürür.
+    Ayrı bir olay yayıcı kullanılmadı; kütüphane tarayıcıda da çalışıyor
   - Mükellefiyet durumu (`CustomerLiability`) — alıcı e-Fatura mükellefi
     mi, e-Arşiv mi; profil ve tip listeleri buna göre daralır
     (`filterProfilesByLiability`, `filterTypesByLiability`). Kütüphane

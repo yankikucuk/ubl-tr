@@ -805,3 +805,80 @@ describe('kod tablosu geçersiz kılma', () => {
     expect(a).toBe(b)
   })
 })
+
+describe('değişiklik ayrıntısı', () => {
+  it('her bildirimde önceki girdiyi taşır', () => {
+    const o = new InvoiceSession(girdi())
+    const gorulen: unknown[] = []
+    o.subscribe((state, degisim) => {
+      gorulen.push([degisim.kind, degisim.previousInput.type, state.input.type])
+    })
+    o.patch({ type: InvoiceType.TEVKIFAT })
+    expect(gorulen).toEqual([['patch', InvoiceType.SATIS, InvoiceType.TEVKIFAT]])
+  })
+
+  it('satır işlemlerinde sırayı ve silinen satırı verir', () => {
+    const o = new InvoiceSession(girdi())
+    const gorulen: unknown[] = []
+    o.subscribe((_s, d) => {
+      gorulen.push(d)
+    })
+    o.addLine({ name: 'İkinci', quantity: 1, unitPrice: 50, vatRate: 10 })
+    o.setLine(1, { unitPrice: 60 })
+    o.removeLine(1)
+    o.setLines([{ name: 'Tek', quantity: 1, unitPrice: 1, vatRate: 20 }])
+
+    expect(gorulen.map((d) => (d as { kind: string }).kind)).toEqual([
+      'line-added',
+      'line-updated',
+      'line-removed',
+      'lines-replaced',
+    ])
+    expect((gorulen[0] as { index: number }).index).toBe(1)
+    expect((gorulen[1] as { previousLine: { unitPrice: number } }).previousLine.unitPrice).toBe(50)
+    expect((gorulen[2] as { previousLine: { unitPrice: number } }).previousLine.unitPrice).toBe(60)
+  })
+
+  it('temizleme ve kimlik değişimini ayırt eder', () => {
+    const o = new InvoiceSession(
+      girdi({
+        currencyCode: 'EUR',
+        exchangeRate: { rate: 36.75 },
+        customer: {
+          taxNumber: '0149537825',
+          name: 'Alıcı Ltd.',
+          address: { district: 'Kadıköy', city: 'İstanbul' },
+          identifications: [{ schemeId: 'MUSTERINO', value: 'M-1' }],
+        },
+      }),
+    )
+    const gorulen: unknown[] = []
+    o.subscribe((_s, d) => {
+      gorulen.push(d)
+    })
+    o.clear('exchangeRate')
+    o.clearLine(0, 'exemptionCode')
+    o.removeIdentification('customer', 0)
+
+    // clearLine olmayan alanda çalışmaz, bildirim de göndermez.
+    expect(gorulen.map((d) => (d as { kind: string }).kind)).toEqual([
+      'cleared',
+      'identifications-changed',
+    ])
+    expect((gorulen[0] as { keys: string[] }).keys).toEqual(['exchangeRate'])
+    expect((gorulen[1] as { party: string }).party).toBe('customer')
+  })
+
+  it('ayrıntıyı yok sayan dinleyici çalışmayı sürdürür', () => {
+    const o = new InvoiceSession(girdi())
+    const dinleyici = vi.fn()
+    o.subscribe(dinleyici)
+    o.patch({ currencyCode: 'EUR' })
+    expect(dinleyici).toHaveBeenCalledTimes(1)
+  })
+
+  it('ihracat bayrağını durumda gösterir', () => {
+    expect(new InvoiceSession(girdi()).state.isExport).toBe(false)
+    expect(new InvoiceSession(girdi(), { isExport: true }).state.isExport).toBe(true)
+  })
+})

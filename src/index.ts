@@ -234,6 +234,7 @@ export {
   type IdentificationParty,
   type InvoiceSessionOptions,
   type LineFieldVisibility,
+  type SessionChange,
   type SessionListener,
   type SessionState,
   type Suggestion,

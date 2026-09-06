@@ -242,6 +242,21 @@ kayıtlı 702'de GTİP ve alıcı satır kodu, şarj faturasında dönem-plaka-E
 raporu, yatırım teşvikte harcama tipi ile marka-model. Kendi kuralınızı
 `suggest(input, [...SUGGESTION_RULES, kendiKuralim])` ile ekleyebilirsiniz.
 
+**Değişikliğin ne olduğu** dinleyiciye ikinci parametreyle gelir. Tek bir
+durum dinleyicisi çoğu form için yeterlidir, ama satır silme animasyonu ya
+da "geri al" düğmesi neyin değiştiğini bilmeyi gerektirir:
+
+```ts
+oturum.subscribe((state, degisim) => {
+  if (degisim.previousInput.type !== state.input.type) tipDegistiUyar()
+  if (degisim.kind === 'line-removed') satirSilmeAnimasyonu(degisim.index, degisim.previousLine)
+})
+```
+
+`(state) => …` yazan bir dinleyici ikinci parametreyi görmezden gelir ve
+çalışmayı sürdürür. Ayrı bir olay yayıcı (`EventEmitter`) kullanılmadı —
+kütüphanenin çalışma zamanı bağımlılığı yok ve tarayıcıda da çalışıyor.
+
 **Mükellefiyet durumu** listeleri daraltır. Türkiye'de fatura düzenlemenin
 ilk kararı budur: alıcı GİB'in e-Fatura mükellef listesinde ise e-Fatura,
 değilse e-Arşiv Fatura düzenlenir; yanlış tarafı seçmek belgeyi geçersiz
