@@ -35,7 +35,10 @@ export {
   isProfileTypeAllowed,
   PROFILE_TYPES,
   RETURN_TYPES,
+  WITHHOLDING_ALLOWED_TYPES,
   WITHHOLDING_TYPES,
+  YTB_TYPES,
+  ZERO_VAT_WITHOUT_EXEMPTION_TYPES,
   type InvoiceProfileId,
   type InvoiceTypeCode,
 } from './invoice.js'

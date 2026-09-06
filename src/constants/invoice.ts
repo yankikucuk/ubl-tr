@@ -212,5 +212,50 @@ export const WITHHOLDING_TYPES: readonly InvoiceTypeCode[] = [
   T.YTB_TEVKIFAT_IADE,
 ]
 
+/**
+ * `cac:WithholdingTaxTotal` **taşıyabilen** fatura tipleri.
+ *
+ * {@link WITHHOLDING_TYPES} ile karıştırılmamalı: orası tevkifatın
+ * *zorunlu* olduğu tipler, burası *izin verilen* tipler.
+ *
+ * Listede `TEVKIFATIADE` **yoktur** ve bu şaşırtıcı ama doğrudur: GİB'in
+ * `GeneralWithholdingTaxTotalCheck` kuralı bu tipi kabul etmez. Sahadaki
+ * doğru yapı, tevkifatlı iadeyi `IADE` tipiyle ve kalemlerde tevkifat
+ * koduyla düzenlemektir.
+ */
+export const WITHHOLDING_ALLOWED_TYPES: readonly InvoiceTypeCode[] = [
+  T.TEVKIFAT,
+  T.YTB_TEVKIFAT,
+  T.IADE,
+  T.YTB_IADE,
+  T.SGK,
+  T.SARJ,
+  T.SARJ_ANLIK,
+]
+
+/**
+ * KDV sıfır olduğunda muafiyet sebebi kodu **gerekmeyen** tipler.
+ *
+ * Diğer tiplerde sıfır KDV'li bir kalem muafiyet kodu ister; bu tiplerde
+ * sıfır KDV'nin gerekçesi tipin kendisidir.
+ */
+export const ZERO_VAT_WITHOUT_EXEMPTION_TYPES: readonly InvoiceTypeCode[] = [
+  T.IADE,
+  T.OZEL_MATRAH,
+  T.SGK,
+  T.IHRAC_KAYITLI,
+  T.KONAKLAMA_VERGISI,
+  T.YTB_IADE,
+]
+
+/** Yatırım teşvik e-Arşiv tipleri. */
+export const YTB_TYPES: readonly InvoiceTypeCode[] = [
+  T.YTB_SATIS,
+  T.YTB_IADE,
+  T.YTB_ISTISNA,
+  T.YTB_TEVKIFAT,
+  T.YTB_TEVKIFAT_IADE,
+]
+
 /** İstisna grubundaki tipler; bu tiplerde muafiyet sebebi kodu zorunludur. */
 export const EXEMPTION_TYPES: readonly InvoiceTypeCode[] = [T.ISTISNA, T.YTB_ISTISNA]

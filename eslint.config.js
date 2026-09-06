@@ -5,6 +5,13 @@ import importX from 'eslint-plugin-import-x'
 import tseslint from 'typescript-eslint'
 
 /**
+ * `session` katmanı bu üç kardeşin ÜSTÜNDEDİR ve üçünü de import edebilir.
+ * Oturum, belgeyi kurar (builders), doğrular (validators) ve gerektiğinde
+ * okur (parsers); bu üçünü tek bir yerde birleştirmek onun görevidir.
+ * Kardeşlerin hiçbiri `session`'a bakamaz.
+ */
+
+/**
  * Kardeş izolasyonu uygulanan katmanlar. Bu üçü aynı seviyededir ve
  * birbirini ÇAĞIRAMAZ: bir doğrulayıcının belge üretmesi ya da bir
  * ayrıştırıcının doğrulayıcıyı çağırması, tek yönlü olması gereken veri
@@ -74,7 +81,14 @@ export default tseslint.config(
   {
     files: ['src/constants/**/*.ts'],
     rules: forbid(
-      ['**/core/**', '**/documents/**', '**/builders/**', '**/parsers/**', '**/validators/**'],
+      [
+        '**/core/**',
+        '**/documents/**',
+        '**/builders/**',
+        '**/parsers/**',
+        '**/validators/**',
+        '**/session/**',
+      ],
       'constants yaprak katmandır; hiçbir üst katmana bağımlı olamaz.',
     ),
   },
@@ -84,7 +98,7 @@ export default tseslint.config(
   {
     files: ['src/core/**/*.ts'],
     rules: forbid(
-      ['**/documents/**', '**/builders/**', '**/parsers/**', '**/validators/**'],
+      ['**/documents/**', '**/builders/**', '**/parsers/**', '**/validators/**', '**/session/**'],
       'core katmanı yalnızca constants yaprağına bağımlı olabilir.',
     ),
   },
@@ -94,7 +108,7 @@ export default tseslint.config(
   {
     files: ['src/documents/**/*.ts'],
     rules: forbid(
-      ['**/builders/**', '**/parsers/**', '**/validators/**'],
+      ['**/builders/**', '**/parsers/**', '**/validators/**', '**/session/**'],
       'documents katmanı yalnızca core ve constants katmanlarına bağımlı olabilir.',
     ),
   },
@@ -115,9 +129,18 @@ export default tseslint.config(
       'no-restricted-imports': [
         'error',
         {
-          patterns: SIBLINGS.filter((other) => other !== self)
-            .flatMap((other) => [`../${other}/**`, `../../${other}/**`])
-            .map((group) => ({ group: [group], message: SIBLING_MESSAGE })),
+          // DİKKAT (I2): session yasağı kardeş desenleriyle AYNI dizide
+          // olmak ZORUNDA. Ayrı bir blok bu diziyi tamamen ezer ve kardeş
+          // izolasyonu sessizce yok olur — canlı olarak yaşandı.
+          patterns: [
+            ...SIBLINGS.filter((other) => other !== self)
+              .flatMap((other) => [`../${other}/**`, `../../${other}/**`])
+              .map((group) => ({ group: [group], message: SIBLING_MESSAGE })),
+            {
+              group: ['**/session/**'],
+              message: 'session en üst katmandır; alt katmanlar ona bağımlı olamaz.',
+            },
+          ],
         },
       ],
     },

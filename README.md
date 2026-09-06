@@ -201,6 +201,47 @@ bir sıra kodu yazılmasıdır — belge `xmllint` ile doğrulanır, GİB redded
 kaynaklardan derlenmiştir ve temiz sonuç kabul garantisi vermez. Referansın
 37 belgesinin 37'si her iki doğrulayıcıdan da temiz geçiyor.
 
+### Etkileşimli oturum
+
+Fatura ekranı yazanın işi tek seferlik bir `build()` çağrısı değildir: alan
+seçildikçe başka alanlar açılıp kapanır, tutarlar yeniden hesaplanır, eksik
+kalanlar kullanıcıya söylenmelidir. `InvoiceSession` bu döngüyü tutar.
+
+```ts
+import { InvoiceSession, InvoiceProfile, InvoiceType } from '@yankikucuk/ubl-tr'
+
+const oturum = new InvoiceSession({ profile: InvoiceProfile.TEMEL, type: InvoiceType.SATIS, … })
+
+oturum.subscribe((durum) => ekraniCiz(durum))
+
+oturum.patch({ type: InvoiceType.TEVKIFAT })     // tevkifat alanları açılır
+oturum.setLine(0, { withholdingCode: '603' })    // ödenecek tutar düşer
+
+oturum.state.fields.withholdingCode  // true  — alan görünürlüğü
+oturum.state.totals.payableAmount    // anlık hesap
+oturum.state.issues                  // engelleyen hatalar
+oturum.state.suggestions             // engellemeyen öneriler
+oturum.state.valid                   // gönderilebilir mi
+```
+
+**Doğrulama girdi üzerinde değil, üretilen belge üzerinde yapılır.** Girdiyi
+denetleyen bir tasarım, nesne XML'e dönüşürken ortaya çıkan hataları göremez;
+oturum her değişiklikte belgeyi gerçekten kurar ve `validateStructure` ile
+`validateInvoiceRules` sonuçlarını birleştirir. Ödediği bedel her tuş
+vuruşunda bir belge kurulmasıdır; karşılığında ekranda gördüğünüz sonuç,
+gönderdiğiniz belgenin sonucudur.
+
+**Alan görünürlüğü** profil ve tipten türer: iade atfı yalnızca iade
+tiplerinde, döviz kuru yalnızca TRY dışı para biriminde, aracı alıcı yalnızca
+kamu profilinde görünür. Seçim listeleri de daralır — `availableExemptions`
+muafiyet kodlarını belge tipine göre süzer, `availableWithholdings` tevkifat
+taşıyamayan tiplerde boş liste verir.
+
+**Öneriler** engellemez, işaret eder: sıfır KDV'de muafiyet kodu, ihraç
+kayıtlı 702'de GTİP ve alıcı satır kodu, şarj faturasında dönem-plaka-ESU
+raporu, yatırım teşvikte harcama tipi ile marka-model. Kendi kuralınızı
+`suggest(input, [...SUGGESTION_RULES, kendiKuralim])` ile ekleyebilirsiniz.
+
 ### Vergi kimliği doğrulama
 
 VKN ve TCKN'nin **kontrol basamaklarını** doğrular. İncelediğimiz üç UBL-TR
@@ -352,12 +393,18 @@ documents/    UBL-TR belge tip modeli                          → core, constan
 builders/     nesne → XML          ┐
 parsers/      XML → nesne          ├ kardeş, birbirini çağıramaz
 validators/   şema ve iş kuralı    ┘
+session/      etkileşimli form durumu  → üç kardeşi de kullanır (tepe)
 ```
 
 Kardeş izolasyonunun sebebi: bir doğrulayıcının belge üretmesi ya da bir
 ayrıştırıcının doğrulayıcı çağırması, tek yönlü olması gereken veri akışını
 çift yönlü hâle getirir ve döngüsel bağımlılığa açar. Ortak ihtiyaç `core`
 ya da `documents` katmanına iner.
+
+`session` üç kardeşi birden kullanan tek katmandır ve tepede durur; hiçbir
+alt katman ona bağımlı olamaz. Kardeşleri birleştirme ihtiyacı gerçektir
+(oturum önce belgeyi kurar, sonra doğrular) ama bu birleşimin tek bir yeri
+olması, izolasyonun kardeş düzeyinde bozulmamasını sağlar.
 
 ## Geliştirme
 

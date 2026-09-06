@@ -92,6 +92,23 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
   - kalem ayrıntıları: marka, model, sınıflandırma kodu, ürün takip ve
     seri numarası
   - fatura dönemi
+- **Etkileşimli oturum katmanı** (`InvoiceSession`) — fatura ekranının
+  ihtiyaç duyduğu durum motoru:
+  - `patch` / `addLine` / `setLine` / `removeLine` / `setLines` ile tipli
+    kısmi güncelleme; her değişiklikte durum yeniden türer
+  - `subscribe` ile dinleyici; `build` ve `toXml` ile aynı oturumdan belge
+  - Doğrulama **girdi üzerinde değil üretilen belge üzerinde** yapılır;
+    `validateStructure` ve `validateInvoiceRules` sonuçları birleşir
+  - Alan görünürlüğü (`deriveFieldVisibility`, `deriveLineFieldVisibility`)
+    profil ve tipten türer
+  - Seçim listeleri daralır: `allowedProfilesForType`,
+    `allowedTypesForProfile`, `availableExemptions`, `availableWithholdings`
+  - 12 öneri kuralı (`suggest`, `SUGGESTION_RULES`) — engellemez, işaret
+    eder; kendi kuralınız listeye eklenebilir
+  - `WITHHOLDING_ALLOWED_TYPES`, `ZERO_VAT_WITHOUT_EXEMPTION_TYPES`,
+    `YTB_TYPES` tip grupları
+  - `session` katmanı üç kardeşi birden kullanan tek katmandır; ESLint
+    kuralı hiçbir alt katmanın ona bağımlı olmasına izin vermez
 
 ### Neden bu tasarım
 
