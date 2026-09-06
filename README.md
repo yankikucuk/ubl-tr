@@ -92,6 +92,90 @@ buildInvoiceXml({ ...girdi, profile: InvoiceProfile.TICARI, type: InvoiceType.IA
 // → RangeError: "TICARIFATURA" profilinde "IADE" fatura tipi kullanılamaz.
 ```
 
+#### Belge alanları
+
+Kurucu, UBL-TR faturasının şu bloklarını üretir — hepsi isteğe bağlıdır ve
+verilmediğinde öğe hiç yazılmaz:
+
+| Alan                                                              | UBL karşılığı                                      |
+| ----------------------------------------------------------------- | -------------------------------------------------- |
+| `billingReference` / `billingReferences`                          | `cac:BillingReference` (tekrarlı)                  |
+| `despatchDocumentReferences`                                      | `cac:DespatchDocumentReference`                    |
+| `receiptDocumentReferences`                                       | `cac:ReceiptDocumentReference`                     |
+| `originatorDocumentReferences`                                    | `cac:OriginatorDocumentReference`                  |
+| `contractDocument`                                                | `cac:ContractDocumentReference`                    |
+| `additionalDocuments[].attachment`                                | `cac:Attachment` — gömülü base64 ve/veya dış adres |
+| `paymentMeans` / `paymentTerms`                                   | `cac:PaymentMeans` / `cac:PaymentTerms`            |
+| `allowanceCharges`                                                | `cac:AllowanceCharge` — belge düzeyi               |
+| `lines[].allowanceCharges`                                        | `cac:AllowanceCharge` — satır düzeyi               |
+| `taxCurrencyCode` / `pricingCurrencyCode` / `paymentCurrencyCode` | ilgili `cbc:` kodları                              |
+| `exchangeRate` / `taxExchangeRate` / `paymentExchangeRate`        | `cac:*ExchangeRate`                                |
+| `signature`                                                       | `cac:Signature` — imzalayan taraf ve imza adresi   |
+| `eArchive`                                                        | e-Arşiv ek belgeleri (aşağıda)                     |
+
+##### İskonto ve ek yük
+
+`AllowanceChargeInput` hem indirimi hem masrafı taşır (`isCharge`), ama
+etkisi düzeye göre **farklıdır** ve bu bilinçli:
+
+```ts
+buildInvoiceXml({
+  ...girdi,
+  // Satır düzeyi: tutar cbc:LineExtensionAmount'a girer, KDV matrahını
+  // da değiştirir. Satırın tek oranı olduğu için iyi tanımlıdır.
+  lines: [{ ...satir, allowanceCharges: [{ isCharge: true, amount: 30, reason: 'Montaj' }] }],
+  // Belge düzeyi: tutar vergiden SONRA cbc:PayableAmount'a uygulanır.
+  // KDV yeniden hesaplanmaz — satırlar farklı oran taşıyabildiğinden
+  // hangi oranın azalacağı tanımsızdır.
+  allowanceCharges: [{ isCharge: false, amount: 100, reason: 'Yıl sonu primi' }],
+})
+```
+
+KDV matrahını da düşürmesi gereken bir iskonto **satıra** yazılmalıdır.
+
+##### Özel matrah
+
+KDV, satılan malın bedeli üzerinden değil ayrı bir matrah üzerinden
+hesaplanıyorsa (telefon kartı, piyango bileti, ikinci el araç):
+
+```ts
+lines: [{ name: 'Kontör', quantity: 1, unitPrice: 100, vatRate: 20, vatBaseAmount: 20 }]
+// Satır tutarı 100,00 · KDV matrahı 20,00 · KDV 4,00 · ödenecek 104,00
+```
+
+Matrah açıkça verildiğinde ek vergilerin artırıcı/azaltıcı etkisi
+**uygulanmaz**: kullanıcı matrahı nihai hâliyle bildirmiştir.
+
+##### e-Arşiv bilgileri
+
+GİB bunları ayrı UBL öğeleriyle değil, belirli `documentTypeCode`
+değerleri taşıyan ek belge atıflarıyla ister. Kodları ezberlemek gerekmez:
+
+```ts
+buildInvoiceXml({
+  ...girdi,
+  profile: InvoiceProfile.EARSIV,
+  eArchive: {
+    sendType: 'ELEKTRONIK',
+    onlineSale: {
+      storeUrl: 'https://magaza.example',
+      paymentMethod: 'KREDIKARTI/BANKAKARTI',
+      paymentDate: '2026-09-05',
+      deliveryDate: '2026-09-07',
+      carrier: { taxNumber: '5555555555', name: 'Kargo A.Ş.' },
+    },
+    xsltTemplate: base64Xslt,
+  },
+})
+```
+
+`sendType: 'KAGIT'` için öğe **yazılmaz** — GİB kâğıt gönderimi varsayılan
+sayar. Eşlemenin ne ürettiğini görmek için `eArchiveDocuments` ve
+`onlineSaleDelivery` ayrıca dışa aktarılır.
+
+SGK faturalarında `eArchive.sgk` üç ek belge üretir; açıklamalarda fatura
+türünün Türkçe adı geçer (`SAGLIK_ECZ` → "Eczane Adı").
+
 #### Senaryo kapsamı
 
 Kapsam, yaygın bir referans uygulamanın senaryo takımına karşı ölçülüyor:
@@ -137,6 +221,25 @@ const xml = buildDespatchAdviceXml({
 e-İrsaliye faturadan bağımsız bir belge tipidir: kök öğesi `DespatchAdvice`,
 ad alanı ayrıdır ve tutar taşımaz. Çoklu sürücü, çekici ve dorse plakası,
 taşıyıcı firma, taşıma ekipmanı ve matbu irsaliyeden dönüş desteklenir.
+
+Kap bilgisi ve malın beyan değeri de yazılabilir:
+
+```ts
+shipment: {
+  goodsValue: { amount: 15000 },
+  transportHandlingUnits: [
+    {
+      id: 'TB-1',
+      totalPackageQuantity: 12,
+      actualPackages: [{ quantity: 12, packagingTypeCode: 'BX' }],
+      transportEquipment: [{ id: 'KONT-1' }],
+    },
+  ],
+}
+```
+
+Ambalaj cinsi kodları (UN/ECE Rec 21) `PACKAGING_TYPE_DEFINITIONS` ile
+listelenir; `packagingTypeDefinition('BX')?.name` → `'Kutu'`.
 Referansın 4 e-İrsaliye senaryosunda hem yapı hem öğe sırası örtüşüyor.
 
 ### Belge okuma
@@ -268,6 +371,8 @@ new InvoiceSession(girdi, { liability: 'earchive' }).state.allowedProfiles
 
 // Tip değişince profil hâlâ geçerli mi?
 resolveProfileForType(InvoiceProfile.TICARI, InvoiceType.IADE) // 'TEMELFATURA'
+// Ters yönü de var: profil değişince tip hâlâ geçerli mi?
+resolveTypeForProfile(InvoiceType.IADE, InvoiceProfile.TICARI) // 'SATIS'
 ```
 
 Kütüphane mükellef listesini **sorgulamaz** — ağ isteği yapmaz. Sonucu siz
@@ -296,6 +401,35 @@ taşır:
 oturum.state.issues
 // [{ code: 'UNKNOWN_WITHHOLDING_CODE', path: 'lines[1].withholdingCode', … }]
 ```
+
+**Alanı yoluyla değiştirmek.** Genel bir form bileşeni alanının yolunu
+bilir ama tipini bilmez. `setPath` ikisini birleştirir ve değerin tipi
+**derleme zamanında** denetlenir:
+
+```ts
+import { linePath } from '@yankikucuk/ubl-tr'
+
+oturum.setPath('currencyCode', 'USD')
+oturum.setPath(linePath(0, 'vatRate'), 10)
+oturum.setPath(linePath(0, 'vatRate'), 'yirmi') // ✗ derlenmez
+```
+
+Yol yazımı doğrulama bulgularınınkiyle aynıdır — bir bulgunun `path`
+değeri doğrudan `getPath`/`setPath`'e verilebilir, form alanı ile bulgu tek
+anahtarla eşleşir. Yollar tipten türer; girdiye yeni bir alan eklendiğinde
+yol kümesi kendiliğinden genişler, senkron tutan bir kod üretim adımı yok.
+
+**Önerilerin farkı.** Her tuş vuruşunda tüm listeyi yeniden çizmek yerine
+yalnızca değişeni vurgulamak için:
+
+```ts
+diffSuggestions(oncekiOneriler, oturum.state.suggestions)
+// { added: [...], removed: [...], kept: [...] }
+```
+
+Anahtar kimlik **ve** yoldur: aynı kural iki satır için ateşlendiğinde
+bunlar ayrı önerilerdir. Gerekçe metni anahtara girmez — metnin
+düzeltilmesi öneriyi "yeni" göstermemelidir.
 
 ### Kod tablolarını genişletmek
 
