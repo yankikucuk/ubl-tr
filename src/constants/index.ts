@@ -8,6 +8,8 @@ export {
 export {
   DespatchProfile,
   DespatchType,
+  FOREIGN_LICENSE_PLATE_SCHEMES,
+  isValidLicensePlateScheme,
   LicensePlateScheme,
   type DespatchProfileId,
   type DespatchTypeCode,
@@ -38,6 +40,13 @@ export {
   type InvoiceTypeCode,
 } from './invoice.js'
 export { Namespace, NamespacePrefix, type NamespaceUri } from './namespace.js'
+export {
+  isValidPaymentMeansCode,
+  PAYMENT_MEANS_CODES,
+  PAYMENT_MEANS_DEFINITIONS,
+  paymentMeansDefinition,
+  type PaymentMeansDefinition,
+} from './payment.js'
 export {
   isValidTaxCode,
   TAX_DEFINITIONS,

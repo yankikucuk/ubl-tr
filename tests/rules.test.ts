@@ -333,3 +333,287 @@ describe('HKS künye numarası', () => {
     ).not.toContain('HKS_MISSING_KUNYENO')
   })
 })
+
+describe('profil bazlı zorunluluklar', () => {
+  it('gerçek kişide vergi dairesi bloğunu reddeder', () => {
+    // gorkem-bwl/atlas#39 — GİB paketine karşı XSD doğrulaması yapan bir
+    // ekip, gerçek kişide `cac:PartyTaxScheme` bulunmaması gerektiğini
+    // bildirdi. Üretici artık yazmıyor; kural elle kurulmuş belgeyi yakalar.
+    const bozuk = container(INVOICE_NS, 'Invoice', [
+      leaf(CBC, 'CustomizationID', 'TR1.2'),
+      container(CAC, 'AccountingCustomerParty', [
+        container(CAC, 'Party', [
+          container(CAC, 'PostalAddress', [
+            leaf(CBC, 'CitySubdivisionName', 'Kadıköy'),
+            leaf(CBC, 'CityName', 'İstanbul'),
+            container(CAC, 'Country', [leaf(CBC, 'Name', 'Türkiye')]),
+          ]),
+          container(CAC, 'PartyTaxScheme', [
+            container(CAC, 'TaxScheme', [leaf(CBC, 'Name', 'Kadıköy')]),
+          ]),
+          container(CAC, 'Person', [leaf(CBC, 'FirstName', 'Ayşe')]),
+        ]),
+      ]),
+    ])
+    expect(validateInvoiceRules(bozuk).issues.map((i) => i.code)).toContain(
+      'NATURAL_PERSON_TAX_SCHEME',
+    )
+  })
+
+  it('üretici gerçek kişide vergi dairesi bloğu yazmaz', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        customer: {
+          taxNumber: '52040077498',
+          name: 'Ayşe Yılmaz',
+          taxOffice: 'Kadıköy',
+          address: { district: 'Kadıköy', city: 'İstanbul' },
+        },
+      }),
+    )
+    // Denetim ALICIYA kapsamlandırılır: satıcı tüzel kişidir ve onda
+    // vergi dairesi bloğu doğru olarak bulunur.
+    const alan = xml.slice(
+      xml.indexOf('<cac:AccountingCustomerParty>'),
+      xml.indexOf('</cac:AccountingCustomerParty>'),
+    )
+    expect(alan).toContain('<cac:Person>')
+    expect(alan).not.toContain('<cac:PartyTaxScheme>')
+    expect(xml).toContain('<cac:PartyTaxScheme>')
+  })
+
+  it('adresin zorunlu alanlarını denetler', () => {
+    const bozuk = container(INVOICE_NS, 'Invoice', [
+      leaf(CBC, 'CustomizationID', 'TR1.2'),
+      container(CAC, 'AccountingSupplierParty', [
+        container(CAC, 'Party', [
+          container(CAC, 'PostalAddress', [leaf(CBC, 'StreetName', 'Cadde 1')]),
+        ]),
+      ]),
+    ])
+    const kod = validateInvoiceRules(bozuk).issues.map((i) => i.code)
+    expect(kod.filter((c) => c === 'MISSING_MANDATORY_ADDRESS_FIELD')).toHaveLength(3)
+  })
+
+  it('kamu profilinde aracı alıcıyı zorunlu tutar', () => {
+    expect(kodlar(girdi({ profile: InvoiceProfile.KAMU }))).toContain('KAMU_MISSING_BUYER_CUSTOMER')
+    expect(
+      kodlar(
+        girdi({
+          profile: InvoiceProfile.KAMU,
+          buyerCustomer: {
+            taxNumber: '0580438389',
+            name: 'Kurum',
+            address: { district: 'Çankaya', city: 'Ankara' },
+          },
+        }),
+      ),
+    ).not.toContain('KAMU_MISSING_BUYER_CUSTOMER')
+  })
+})
+
+describe('ihraç kayıtlı 702', () => {
+  const ihrac = (over: Partial<Parameters<typeof girdi>[0]> = {}): string[] =>
+    kodlar(
+      girdi({
+        type: InvoiceType.IHRAC_KAYITLI,
+        lines: [
+          {
+            name: 'x',
+            quantity: 1,
+            unitPrice: 100,
+            vatRate: 0,
+            exemptionCode: '702',
+            ...(over.lines?.[0] ?? {}),
+          },
+        ],
+        ...over,
+      }),
+    )
+
+  it('GTİP ve alıcı satır kodu yoksa yakalar', () => {
+    const kod = ihrac()
+    expect(kod).toContain('IHRACKAYITLI_MISSING_CUSTOMS_ID')
+    expect(kod).toContain('IHRACKAYITLI_MISSING_BUYER_LINE_CODE')
+  })
+
+  it('ikisi de varsa geçer', () => {
+    const kod = kodlar(
+      girdi({
+        type: InvoiceType.IHRAC_KAYITLI,
+        lines: [
+          {
+            name: 'x',
+            quantity: 1,
+            unitPrice: 100,
+            vatRate: 0,
+            exemptionCode: '702',
+            delivery: {
+              customsTariffNumber: '620342000010',
+              customsDeclaration: {
+                issuerParty: {
+                  taxNumber: '12345678901',
+                  identificationSchemeId: 'ALICIDIBSATIRKOD',
+                  name: 'Aracı',
+                  address: { district: 'Kadıköy', city: 'İstanbul' },
+                },
+              },
+            },
+          },
+        ],
+      }),
+    )
+    expect(kod).not.toContain('IHRACKAYITLI_MISSING_CUSTOMS_ID')
+    expect(kod).not.toContain('IHRACKAYITLI_MISSING_BUYER_LINE_CODE')
+  })
+
+  it('GTİP 12 hane değilse yakalar', () => {
+    expect(
+      kodlar(
+        girdi({
+          type: InvoiceType.IHRAC_KAYITLI,
+          lines: [
+            {
+              name: 'x',
+              quantity: 1,
+              unitPrice: 100,
+              vatRate: 0,
+              exemptionCode: '702',
+              delivery: { customsTariffNumber: '6203420000' },
+            },
+          ],
+        }),
+      ),
+    ).toContain('IHRACKAYITLI_MISSING_CUSTOMS_ID')
+  })
+})
+
+describe('şarj hizmeti', () => {
+  const sarj = (over: Partial<Parameters<typeof girdi>[0]> = {}): string[] =>
+    kodlar(
+      girdi({
+        profile: InvoiceProfile.ENERJI,
+        type: InvoiceType.SARJ,
+        lines: [{ name: 'Şarj', quantity: 1, unitPrice: 360, vatRate: 20 }],
+        ...over,
+      }),
+    )
+
+  it('dönem, plaka ve ESU raporunu zorunlu tutar', () => {
+    const kod = sarj()
+    expect(kod).toContain('ENERJI_MISSING_INVOICE_PERIOD')
+    expect(kod).toContain('ENERJI_MISSING_PLATE')
+    expect(kod).toContain('ENERJI_MISSING_ESU_REPORT')
+  })
+
+  it('hepsi varsa geçer', () => {
+    const kod = sarj({
+      invoicePeriod: {
+        startDate: '2026-04-01',
+        startTime: '00:00:00',
+        endDate: '2026-04-23',
+        endTime: '15:00:00',
+      },
+      additionalDocuments: [{ id: 'ESU-1', schemeId: 'ESURaporID' }],
+      customer: { ...alici, identifications: [{ schemeId: 'PLAKA', value: '34ABC123' }] },
+    })
+    expect(kod).not.toContain('ENERJI_MISSING_INVOICE_PERIOD')
+    expect(kod).not.toContain('ENERJI_MISSING_PLATE')
+    expect(kod).not.toContain('ENERJI_MISSING_ESU_REPORT')
+  })
+
+  it('eksik dönem alanını yakalar', () => {
+    expect(sarj({ invoicePeriod: { startDate: '2026-04-01' } })).toContain(
+      'ENERJI_INCOMPLETE_INVOICE_PERIOD',
+    )
+  })
+
+  it('SARJANLIK ESU raporu istemez', () => {
+    // Kural yalnız SARJ'ı kapsar; SARJANLIK kapsam dışıdır.
+    expect(sarj({ type: InvoiceType.SARJ_ANLIK })).not.toContain('ENERJI_MISSING_ESU_REPORT')
+  })
+})
+
+describe('yatırım teşvik ve demirbaş KDV', () => {
+  it('sıfır KDV oranını reddeder', () => {
+    // Teşvik "vazgeçilen KDV" olarak gösterilir; hesap yine yapılır.
+    expect(
+      kodlar(
+        girdi({
+          profile: InvoiceProfile.YATIRIM_TESVIK,
+          contractDocument: { id: '123456', schemeId: 'YTBNO' },
+          lines: [{ name: 'x', quantity: 1, unitPrice: 600, vatRate: 0 }],
+        }),
+      ),
+    ).toContain('YTB_ZERO_VAT')
+  })
+
+  it('harcama tipi 01 kaleminde marka ve model zorunludur', () => {
+    const eksik = kodlar(
+      girdi({
+        profile: InvoiceProfile.YATIRIM_TESVIK,
+        lines: [
+          { name: 'Kompresör', quantity: 1, unitPrice: 600, vatRate: 12, classificationCode: '01' },
+        ],
+      }),
+    )
+    expect(eksik.filter((c) => c === 'YTB_MISSING_ITEM_DETAIL')).toHaveLength(2)
+
+    expect(
+      kodlar(
+        girdi({
+          profile: InvoiceProfile.YATIRIM_TESVIK,
+          lines: [
+            {
+              name: 'Kompresör',
+              quantity: 1,
+              unitPrice: 600,
+              vatRate: 12,
+              classificationCode: '01',
+              brandName: 'DemoMakine',
+              modelName: 'DMK-2000',
+            },
+          ],
+        }),
+      ),
+    ).not.toContain('YTB_MISSING_ITEM_DETAIL')
+  })
+
+  it('iade tiplerinde KDV kuralı uygulanmaz', () => {
+    expect(
+      kodlar(
+        girdi({
+          profile: InvoiceProfile.YATIRIM_TESVIK,
+          type: InvoiceType.IADE,
+          billingReference: { id: 'ABC2026000000000', issueDate: '2026-08-01' },
+          lines: [{ name: 'x', quantity: 1, unitPrice: 600, vatRate: 0 }],
+        }),
+      ),
+    ).not.toContain('YTB_ZERO_VAT')
+  })
+
+  it('555 kodunu sıfır KDV ile reddeder', () => {
+    expect(
+      kodlar(
+        girdi({
+          lines: [{ name: 'x', quantity: 1, unitPrice: 100, vatRate: 0, exemptionCode: '555' }],
+        }),
+      ),
+    ).toContain('DEMIRBAS_KDV_ZERO_RATE')
+  })
+})
+
+describe('ödeme şekli ve plaka kod listeleri', () => {
+  it('ödeme şekli kodunu kod listesine karşı denetler', () => {
+    expect(kodlar(girdi({ paymentMeans: { meansCode: '42' } }))).not.toContain(
+      'UNKNOWN_PAYMENT_MEANS_CODE',
+    )
+    // Adı yayımlanmamış ama GİB'in kabul ettiği kodlar geçerlidir.
+    expect(kodlar(girdi({ paymentMeans: { meansCode: '97' } }))).not.toContain(
+      'UNKNOWN_PAYMENT_MEANS_CODE',
+    )
+    expect(kodlar(girdi({ paymentMeans: { meansCode: 'HAVALE' } }))).toContain(
+      'UNKNOWN_PAYMENT_MEANS_CODE',
+    )
+  })
+})

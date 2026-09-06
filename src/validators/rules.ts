@@ -3,6 +3,7 @@ import {
   Currency,
   isValidExemptionCode,
   isProfileTypeAllowed,
+  isValidPaymentMeansCode,
   isValidTaxCode,
   isValidUnitCode,
   Namespace,
@@ -42,6 +43,18 @@ const PARTY_ELEMENTS = new Set([
   'SignatoryParty',
   'TaxRepresentativeParty',
 ])
+
+/** e-Arşiv yatırım teşvik fatura tipleri. */
+const YTB_EARSIV_TYPES = new Set([
+  'YTBSATIS',
+  'YTBIADE',
+  'YTBISTISNA',
+  'YTBTEVKIFAT',
+  'YTBTEVKIFATIADE',
+])
+
+/** Yatırım teşvik kapsamındaki iade tipleri; KDV kuralı bunlara uygulanmaz. */
+const YTB_RETURN_TYPES = new Set(['IADE', 'TEVKIFATIADE', 'YTBIADE', 'YTBTEVKIFATIADE'])
 
 /** Yurt içi sayılan ülke adları. */
 const TURKIYE = new Set(['türkiye', 'turkiye', 'turkey', 'tr'])
@@ -409,6 +422,231 @@ export const validateInvoiceRules = (root: XmlElement): ValidationResult => {
             `"${paraBirimi}" ${String(basamak)} ondalık basamak ister, ` +
               `"${oge.text}" ${String(decimalPlaces(oge.text))} basamak yazılmış.`,
             'warning',
+          )
+        }
+      }
+    }
+  }
+
+  // ── Gerçek kişide vergi dairesi bloğu ────────────────────────────────
+  // GİB paketine karşı XSD doğrulaması yapan bir ekip, gerçek kişi
+  // tarafında `cac:PartyTaxScheme` bulunmaması gerektiğini bildirdi.
+  for (const [oge, yol] of walk(root, kokAdi)) {
+    if (!PARTY_ELEMENTS.has(oge.name) || oge.kind !== 'container') continue
+
+    const kisi = child(oge, CAC, 'Person')
+    if (kisi !== undefined && child(oge, CAC, 'PartyTaxScheme') !== undefined) {
+      ekle(
+        'NATURAL_PERSON_TAX_SCHEME',
+        `${yol}/cac:PartyTaxScheme`,
+        'Gerçek kişi tarafında vergi dairesi bloğu (cac:PartyTaxScheme) yazılmaz.',
+      )
+    }
+
+    // ── Adresin zorunlu alanları ──────────────────────────────────────
+    // GİB paketinde ilçe, il ve ülke zorunludur; stok OASIS şemasında
+    // isteğe bağlı olsalar bile. Boş bir öğe geçer, hiç yazılmayan geçmez.
+    const adres = child(oge, CAC, 'PostalAddress')
+    if (adres !== undefined) {
+      for (const alan of ['CitySubdivisionName', 'CityName'] as const) {
+        if (text(adres, alan) === undefined) {
+          ekle(
+            'MISSING_MANDATORY_ADDRESS_FIELD',
+            `${yol}/cac:PostalAddress/cbc:${alan}`,
+            `Adreste "${alan}" zorunludur; GİB paketi bu alanı stok UBL'den farklı olarak şart koşar.`,
+          )
+        }
+      }
+      if (child(adres, CAC, 'Country') === undefined) {
+        ekle(
+          'MISSING_MANDATORY_ADDRESS_FIELD',
+          `${yol}/cac:PostalAddress/cac:Country`,
+          'Adreste ülke bloğu zorunludur.',
+        )
+      }
+    }
+  }
+
+  // ── İhraç kayıtlı 702: GTİP ve alıcı satır kodu ──────────────────────
+  // Muafiyet kodu 702 kullanıldığında HER satırda gümrük bilgisi aranır:
+  // 12 haneli GTİP ve 11 haneli alıcı satır kodu.
+  const muafiyetKodlari = new Set<string>()
+  for (const [oge] of walk(root, kokAdi)) {
+    if (oge.name === 'TaxExemptionReasonCode' && oge.kind === 'leaf') {
+      muafiyetKodlari.add(oge.text)
+    }
+  }
+  if (tip === 'IHRACKAYITLI' && muafiyetKodlari.has('702')) {
+    for (const [i, satir] of satirlar.entries()) {
+      const teslim = child(satir, CAC, 'Delivery')
+      const sevkiyat = teslim === undefined ? undefined : child(teslim, CAC, 'Shipment')
+      const mal = sevkiyat === undefined ? undefined : child(sevkiyat, CAC, 'GoodsItem')
+      const gtip = mal === undefined ? undefined : text(mal, 'RequiredCustomsID')
+      const birim =
+        sevkiyat === undefined ? undefined : child(sevkiyat, CAC, 'TransportHandlingUnit')
+      const beyanname = birim === undefined ? undefined : child(birim, CAC, 'CustomsDeclaration')
+      const duzenleyen = beyanname === undefined ? undefined : child(beyanname, CAC, 'IssuerParty')
+      const satirKodu =
+        duzenleyen === undefined
+          ? undefined
+          : children(duzenleyen, CAC, 'PartyIdentification')
+              .map((k) => child(k, CBC, 'ID'))
+              .find((id) => id !== undefined && attribute(id, 'schemeID') === 'ALICIDIBSATIRKOD')
+
+      if (gtip?.length !== 12) {
+        ekle(
+          'IHRACKAYITLI_MISSING_CUSTOMS_ID',
+          `${kokAdi}/cac:InvoiceLine[${String(i + 1)}]/cac:Delivery`,
+          '702 muafiyet kodunda her satırda 12 haneli GTİP numarası zorunludur.',
+        )
+      }
+      if (satirKodu?.kind !== 'leaf' || satirKodu.text.length !== 11) {
+        ekle(
+          'IHRACKAYITLI_MISSING_BUYER_LINE_CODE',
+          `${kokAdi}/cac:InvoiceLine[${String(i + 1)}]/cac:Delivery`,
+          '702 muafiyet kodunda her satırda 11 haneli alıcı satır kodu (ALICIDIBSATIRKOD) zorunludur.',
+        )
+      }
+    }
+  }
+
+  // ── Şarj hizmeti (SARJ / SARJANLIK) ──────────────────────────────────
+  // Kurallar profile DEĞİL fatura tipine bakar.
+  if (tip === 'SARJ' || tip === 'SARJANLIK') {
+    const donem = child(root, CAC, 'InvoicePeriod')
+    if (donem === undefined) {
+      ekle(
+        'ENERJI_MISSING_INVOICE_PERIOD',
+        `${kokAdi}/cac:InvoicePeriod`,
+        'Şarj hizmeti faturalarında fatura dönemi zorunludur.',
+      )
+    } else {
+      for (const alan of ['StartDate', 'StartTime', 'EndDate', 'EndTime'] as const) {
+        if (text(donem, alan) === undefined) {
+          ekle(
+            'ENERJI_INCOMPLETE_INVOICE_PERIOD',
+            `${kokAdi}/cac:InvoicePeriod/cbc:${alan}`,
+            `Şarj hizmeti faturasında dönem "${alan}" alanı zorunludur.`,
+          )
+        }
+      }
+    }
+
+    const musteri = child(root, CAC, 'AccountingCustomerParty')
+    const taraf = musteri === undefined ? undefined : child(musteri, CAC, 'Party')
+    const plaka =
+      taraf === undefined
+        ? false
+        : children(taraf, CAC, 'PartyIdentification').some((k) => {
+            const id = child(k, CBC, 'ID')
+            return id !== undefined && attribute(id, 'schemeID') === 'PLAKA'
+          })
+    if (!plaka) {
+      ekle(
+        'ENERJI_MISSING_PLATE',
+        `${kokAdi}/cac:AccountingCustomerParty`,
+        'Şarj hizmeti faturalarında alıcı tarafında plaka (schemeID="PLAKA") zorunludur.',
+      )
+    }
+  }
+
+  // SARJ'a özgü: ESU rapor kimliği. SARJANLIK bu kuralın KAPSAMINDA DEĞİL.
+  if (tip === 'SARJ') {
+    const esu = children(root, CAC, 'AdditionalDocumentReference').some((b) => {
+      const id = child(b, CBC, 'ID')
+      return id !== undefined && attribute(id, 'schemeID') === 'ESURaporID'
+    })
+    if (!esu) {
+      ekle(
+        'ENERJI_MISSING_ESU_REPORT',
+        `${kokAdi}/cac:AdditionalDocumentReference`,
+        'SARJ faturalarında schemeID="ESURaporID" taşıyan bir ek belge zorunludur.',
+      )
+    }
+  }
+
+  // ── Ödeme şekli kodu ─────────────────────────────────────────────────
+  // Kod listesinden gelmeli; serbest metin kabul edilmez.
+  for (const odeme of children(root, CAC, 'PaymentMeans')) {
+    const kod = text(odeme, 'PaymentMeansCode')
+    if (kod !== undefined && !isValidPaymentMeansCode(kod)) {
+      ekle(
+        'UNKNOWN_PAYMENT_MEANS_CODE',
+        `${kokAdi}/cac:PaymentMeans/cbc:PaymentMeansCode`,
+        `"${kod}" tanımlı bir ödeme şekli kodu değil.`,
+      )
+    }
+  }
+
+  // ── Kamu profili: aracı alıcı ────────────────────────────────────────
+  if (profil === 'KAMU' && child(root, CAC, 'BuyerCustomerParty') === undefined) {
+    ekle(
+      'KAMU_MISSING_BUYER_CUSTOMER',
+      `${kokAdi}/cac:BuyerCustomerParty`,
+      'Kamu profilinde alıcı kurum (cac:BuyerCustomerParty) zorunludur.',
+    )
+  }
+
+  // ── Demirbaş KDV (555) sıfır KDV ile kullanılamaz ────────────────────
+  if (muafiyetKodlari.has('555')) {
+    for (const vergiToplami of children(root, CAC, 'TaxTotal')) {
+      for (const altToplam of children(vergiToplami, CAC, 'TaxSubtotal')) {
+        const kategori = child(altToplam, CAC, 'TaxCategory')
+        if (kategori === undefined || text(kategori, 'TaxExemptionReasonCode') !== '555') continue
+        const oran = toDecimal(text(altToplam, 'Percent'))
+        if (oran !== undefined && compare(oran, decimal('0')) === 0) {
+          ekle(
+            'DEMIRBAS_KDV_ZERO_RATE',
+            `${kokAdi}/cac:TaxTotal/cac:TaxSubtotal/cbc:Percent`,
+            '555 (demirbaş KDV) kodu sıfır KDV oranıyla kullanılamaz.',
+          )
+        }
+      }
+    }
+  }
+
+  // ── Yatırım teşvik ───────────────────────────────────────────────────
+  const ytbKapsam =
+    profil === 'YATIRIMTESVIK' ||
+    (profil === 'EARSIVFATURA' && tip !== undefined && YTB_EARSIV_TYPES.has(tip))
+  const ytbIade = tip !== undefined && YTB_RETURN_TYPES.has(tip)
+  if (ytbKapsam && !ytbIade) {
+    // Yatırım teşvik faturasında KDV oranı ve tutarı SIFIR OLAMAZ; teşvik
+    // "vazgeçilen KDV" olarak gösterilir, hesap yine yapılır.
+    for (const vergiToplami of children(root, CAC, 'TaxTotal')) {
+      for (const altToplam of children(vergiToplami, CAC, 'TaxSubtotal')) {
+        const kategori = child(altToplam, CAC, 'TaxCategory')
+        const sema = kategori === undefined ? undefined : child(kategori, CAC, 'TaxScheme')
+        if (sema === undefined || text(sema, 'TaxTypeCode') !== VAT_TAX_CODE) continue
+        const oran = toDecimal(text(altToplam, 'Percent'))
+        const tutar = toDecimal(text(altToplam, 'TaxAmount'))
+        if (
+          (oran !== undefined && compare(oran, decimal('0')) === 0) ||
+          (tutar !== undefined && compare(tutar, decimal('0')) === 0)
+        ) {
+          ekle(
+            'YTB_ZERO_VAT',
+            `${kokAdi}/cac:TaxTotal/cac:TaxSubtotal`,
+            'Yatırım teşvik faturasında KDV oranı ve tutarı sıfır olamaz.',
+          )
+        }
+      }
+    }
+
+    // Harcama tipi 01 (makine-teçhizat) kaleminde marka ve model zorunlu.
+    for (const [i, satir] of satirlar.entries()) {
+      const kalem = child(satir, CAC, 'Item')
+      if (kalem === undefined) continue
+      const sinif = children(kalem, CAC, 'CommodityClassification')
+        .map((c) => text(c, 'ItemClassificationCode'))
+        .find((c) => c !== undefined)
+      if (sinif !== '01') continue
+      for (const alan of ['BrandName', 'ModelName'] as const) {
+        if (text(kalem, alan) === undefined) {
+          ekle(
+            'YTB_MISSING_ITEM_DETAIL',
+            `${kokAdi}/cac:InvoiceLine[${String(i + 1)}]/cac:Item/cbc:${alan}`,
+            `Yatırım teşvik harcama tipi 01 kaleminde "${alan}" zorunludur.`,
           )
         }
       }

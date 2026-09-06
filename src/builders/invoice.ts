@@ -127,6 +127,13 @@ export interface InvoicePeriodInput {
 export interface AdditionalDocumentReferenceInput {
   /** Atıf yapılan belgenin numarası ya da değeri — `cbc:ID`. */
   readonly id: string
+  /**
+   * Numaranın şeması — `schemeID`.
+   *
+   * Bazı kurallar bu şemayı anahtar olarak arar: şarj hizmeti
+   * faturalarında `ESURaporID` taşıyan bir ek belge zorunludur.
+   */
+  readonly schemeId?: string
   /** Belgenin tarihi (`YYYY-MM-DD`). */
   readonly issueDate?: string
   /**
@@ -564,7 +571,12 @@ export const buildInvoice = (
         ]),
     ...(input.additionalDocuments ?? []).map((belge) =>
       container(CAC, 'AdditionalDocumentReference', [
-        leaf(CBC, 'ID', belge.id),
+        leaf(
+          CBC,
+          'ID',
+          belge.id,
+          belge.schemeId === undefined ? [] : [{ name: 'schemeID', value: belge.schemeId }],
+        ),
         optionalLeaf(CBC, 'IssueDate', belge.issueDate),
         optionalLeaf(CBC, 'DocumentTypeCode', belge.documentTypeCode),
         optionalLeaf(CBC, 'DocumentType', belge.documentType),

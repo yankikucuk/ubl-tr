@@ -239,7 +239,11 @@ export const buildParty = (party: PartyInput, elementName = 'Party'): XmlElement
     ),
     person === undefined ? container(CAC, 'PartyName', [leaf(CBC, 'Name', party.name)]) : undefined,
     party.address === undefined ? undefined : buildPostalAddress(party.address),
-    party.taxOffice === undefined
+    // Gerçek kişide `cac:PartyTaxScheme` YAZILMAZ. GİB paketine karşı XSD
+    // doğrulaması yapan bir ekip bu alanın gerçek kişide bulunmaması
+    // gerektiğini bildirdi (gorkem-bwl/atlas#39). Vergi dairesi verilse bile
+    // gerçek kişi tarafında atlanır.
+    party.taxOffice === undefined || person !== undefined
       ? undefined
       : container(CAC, 'PartyTaxScheme', [
           container(CAC, 'TaxScheme', [leaf(CBC, 'Name', party.taxOffice)]),

@@ -66,12 +66,18 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
 - **Ayrıştırıcı katmanı** (`parseInvoice`, `parseDespatchAdvice`) — XML'den
   tipli belge nesnesine. Okuma tipi yazma tipinden ayrıdır; ayrıştırma
   hoşgörülüdür ve hiçbir değerin türü tahmin edilmez.
+- **Ödeme şekli ve plaka kod listeleri** — GİB'in kabul ettiği 20 ödeme
+  şekli kodu (adı yayımlı olan 7'si etiketli) ve 6 plaka şeması.
 - **Yapısal doğrulama** (`validateStructure`) — UBL `xsd:sequence` sırası,
   zorunluluk ve tekrar sınırları; 60 öğe tipi modellendi.
-- **İş kuralı doğrulaması** (`validateInvoiceRules`) — belge numarası biçimi
-  ve yılı, profil-tip eşleşmesi, iade atfı, muafiyet kodu, kod listeleri,
-  tevkifat kodu-oran çifti, tutar tutarlılığı, ondalık basamak sınırı, HKS
-  künye numarası, vergi numarası kontrol basamağı (uyarı).
+- **İş kuralı doğrulaması** (`validateInvoiceRules`) — 25 kural: belge
+  numarası biçimi ve yılı, profil-tip eşleşmesi, iade atfı, muafiyet kodu,
+  kod listeleri (birim, vergi, muafiyet, ödeme şekli), tevkifat kodu-oran
+  çifti, tutar tutarlılığı, ondalık basamak sınırı, adresin zorunlu
+  alanları, gerçek kişide vergi dairesi bloğu, HKS künye numarası, ihraç
+  kayıtlı 702 gümrük bilgileri, şarj hizmetinde dönem/plaka/ESU raporu,
+  kamu profilinde aracı alıcı, yatırım teşvikte KDV ve kalem ayrıntıları,
+  demirbaş KDV, vergi numarası kontrol basamağı (uyarı).
 - **Senaryo kapsamı** — 37 senaryonun (33 fatura + 4 e-İrsaliye) tamamında
   hem tutarlar hem belge yapısı referansla birebir örtüşüyor:
   - 103 KDV istisna/muafiyet kodu ve açıklaması
