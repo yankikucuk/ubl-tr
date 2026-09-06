@@ -1,3 +1,4 @@
+import { type CodeTables, findByCode } from './code-tables.js'
 /** KDV'nin GİB vergi türü kodu. */
 export const VAT_TAX_CODE = '0015'
 
@@ -269,7 +270,8 @@ const TAX_MAP = new Map(TAX_DEFINITIONS.map((t) => [t.code, t]))
  * taxDefinition('0003')?.deductsFromTotal // true — gelir vergisi stopajı
  * ```
  */
-export const taxDefinition = (code: string): TaxDefinition | undefined => TAX_MAP.get(code)
+export const taxDefinition = (code: string, tables?: CodeTables): TaxDefinition | undefined =>
+  findByCode(tables?.taxes, code) ?? TAX_MAP.get(code)
 
 /**
  * Bir vergi türü kodunun geçerli olup olmadığını söyler. KDV kodu da geçerlidir.
@@ -284,4 +286,5 @@ export const taxDefinition = (code: string): TaxDefinition | undefined => TAX_MA
  * isValidTaxCode('9999') // false
  * ```
  */
-export const isValidTaxCode = (code: string): boolean => code === VAT_TAX_CODE || TAX_MAP.has(code)
+export const isValidTaxCode = (code: string, tables?: CodeTables): boolean =>
+  code === VAT_TAX_CODE || taxDefinition(code, tables) !== undefined

@@ -1,4 +1,5 @@
 import {
+  type CodeTables,
   EXEMPTION_DEFINITIONS,
   type ExemptionDefinition,
   InvoiceProfile,
@@ -324,8 +325,10 @@ export const resolveProfileForType = (
  */
 export const availableExemptions = (
   type: InvoiceTypeCode | undefined,
+  tables?: CodeTables,
 ): readonly ExemptionDefinition[] => {
-  if (type === undefined) return EXEMPTION_DEFINITIONS
+  const tumu = [...(tables?.exemptions ?? []), ...EXEMPTION_DEFINITIONS]
+  if (type === undefined) return tumu
   const hedef =
     type === InvoiceType.IHRAC_KAYITLI
       ? 'IHRACKAYITLI'
@@ -334,7 +337,7 @@ export const availableExemptions = (
         : type === InvoiceType.ISTISNA || type === InvoiceType.YTB_ISTISNA
           ? 'ISTISNA'
           : 'SATIS'
-  return EXEMPTION_DEFINITIONS.filter((e) => e.documentType === hedef)
+  return tumu.filter((e) => e.documentType === hedef)
 }
 
 /**
@@ -351,5 +354,8 @@ export const availableExemptions = (
  */
 export const availableWithholdings = (
   type: InvoiceTypeCode | undefined,
+  tables?: CodeTables,
 ): readonly WithholdingDefinition[] =>
-  iceren(WITHHOLDING_ALLOWED_TYPES, type) ? WITHHOLDING_DEFINITIONS : []
+  iceren(WITHHOLDING_ALLOWED_TYPES, type)
+    ? [...(tables?.withholdings ?? []), ...WITHHOLDING_DEFINITIONS]
+    : []

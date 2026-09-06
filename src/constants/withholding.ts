@@ -1,3 +1,4 @@
+import { type CodeTables, findByCode } from './code-tables.js'
 /** Bir KDV tevkifatı kodunun tanımı. */
 export interface WithholdingDefinition {
   /** GİB tevkifat kodu. `6xx` kısmi, `8xx` tam tevkifattır. */
@@ -141,8 +142,11 @@ const WITHHOLDING_MAP = new Map(WITHHOLDING_DEFINITIONS.map((w) => [w.code, w]))
  * withholdingDefinition('803')?.rate // 100 — aynı işin tam tevkifatı
  * ```
  */
-export const withholdingDefinition = (code: string): WithholdingDefinition | undefined =>
-  WITHHOLDING_MAP.get(code)
+export const withholdingDefinition = (
+  code: string,
+  tables?: CodeTables,
+): WithholdingDefinition | undefined =>
+  findByCode(tables?.withholdings, code) ?? WITHHOLDING_MAP.get(code)
 
 /**
  * Bir tevkifat kodunun geçerli olup olmadığını söyler.

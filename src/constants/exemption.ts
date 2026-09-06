@@ -1,3 +1,4 @@
+import { type CodeTables, findByCode } from './code-tables.js'
 /** Bir KDV istisna / muafiyet kodunun tanımı. */
 export interface ExemptionDefinition {
   /** GİB muafiyet sebebi kodu — `cbc:TaxExemptionReasonCode`. */
@@ -604,8 +605,11 @@ const EXEMPTION_MAP = new Map(EXEMPTION_DEFINITIONS.map((e) => [e.code, e]))
  * exemptionDefinition('702')?.documentType // 'IHRACKAYITLI'
  * ```
  */
-export const exemptionDefinition = (code: string): ExemptionDefinition | undefined =>
-  EXEMPTION_MAP.get(code)
+export const exemptionDefinition = (
+  code: string,
+  tables?: CodeTables,
+): ExemptionDefinition | undefined =>
+  findByCode(tables?.exemptions, code) ?? EXEMPTION_MAP.get(code)
 
 /**
  * Bir muafiyet kodunun geçerli olup olmadığını söyler.
@@ -619,4 +623,5 @@ export const exemptionDefinition = (code: string): ExemptionDefinition | undefin
  * isValidExemptionCode('999') // false
  * ```
  */
-export const isValidExemptionCode = (code: string): boolean => EXEMPTION_MAP.has(code)
+export const isValidExemptionCode = (code: string, tables?: CodeTables): boolean =>
+  exemptionDefinition(code, tables) !== undefined

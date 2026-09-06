@@ -1,3 +1,4 @@
+import { type CodeTables, findByCode } from './code-tables.js'
 /**
  * Bir ölçü birimi tanımı.
  *
@@ -118,7 +119,8 @@ const UNIT_MAP = new Map(UNIT_DEFINITIONS.map((u) => [u.code, u]))
  * unitDefinition('Adet')      // undefined — bu bir ad, kod değil
  * ```
  */
-export const unitDefinition = (code: string): UnitDefinition | undefined => UNIT_MAP.get(code)
+export const unitDefinition = (code: string, tables?: CodeTables): UnitDefinition | undefined =>
+  findByCode(tables?.units, code) ?? UNIT_MAP.get(code)
 
 /**
  * Bir birim kodunun geçerli olup olmadığını söyler.
@@ -132,4 +134,5 @@ export const unitDefinition = (code: string): UnitDefinition | undefined => UNIT
  * isValidUnitCode('ADET')  // false
  * ```
  */
-export const isValidUnitCode = (code: string): boolean => UNIT_MAP.has(code)
+export const isValidUnitCode = (code: string, tables?: CodeTables): boolean =>
+  unitDefinition(code, tables) !== undefined

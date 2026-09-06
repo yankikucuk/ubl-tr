@@ -282,6 +282,33 @@ oturum.state.issues
 // [{ code: 'UNKNOWN_WITHHOLDING_CODE', path: 'lines[1].withholdingCode', … }]
 ```
 
+### Kod tablolarını genişletmek
+
+GİB kod listelerini kendi takvimine göre günceller. Bir kütüphane sürümünü
+beklemek sahada gerçek bir engeldir: kod tanınmadığı için belge **hiç
+üretilemez**. Verdiğiniz tanımlar gömülü tablonun önüne geçer — yeni kod
+eklenebilir, var olan bir tanım düzeltilebilir.
+
+```ts
+const tablolar = {
+  withholdings: [{ code: '999', name: 'Yeni tevkifat', rate: 50 }],
+}
+
+new InvoiceSession(girdi, { codeTables: tablolar })
+// hesaplama, üretim, doğrulama, öneriler ve seçim listeleri — hepsi aynı tabloyu görür
+```
+
+Tablo **çağrı başına** verilir, süreç genelinde değişen bir tekil nesneyle
+değil. Sebebi üç tane: aynı süreçte birden çok kiracıya farklı tablo
+verilebilir; `withholdingDefinition('603')` saf kalır, süreç ömrü boyunca
+aynı sonucu verir; ve `EventEmitter` gerekmediği için kütüphane tarayıcıda
+çalışmayı sürdürür.
+
+Aynı seçenek `buildInvoiceXml(girdi, { codeTables })` ve
+`validateInvoiceRules(root, { codeTables })` için de geçerlidir — belgeyi
+bir tabloyla üretip başkasıyla doğrulamak, kendi eklediğiniz kodu
+"tanımsız" göstermek olurdu.
+
 ### Vergi kimliği doğrulama
 
 VKN ve TCKN'nin **kontrol basamaklarını** doğrular. İncelediğimiz üç UBL-TR

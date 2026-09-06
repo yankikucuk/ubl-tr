@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { InvoiceInput } from '../src/builders/invoice.js'
+import type { CodeTables } from '../src/constants/index.js'
 import { InvoiceProfile, InvoiceType } from '../src/constants/index.js'
 import { formatAmount } from '../src/documents/index.js'
 import {
@@ -721,5 +722,86 @@ describe('kimlik listesi', () => {
     expect(o.toXml()).toContain('<cbc:ID schemeID="MUSTERINO">M-1</cbc:ID>')
     o.setIdentifications('customer', [])
     expect(o.toXml()).not.toContain('MUSTERINO')
+  })
+})
+
+describe('kod tablosu geçersiz kılma', () => {
+  // GİB yeni bir kod yayımladığında paket sürümü beklemek zorunda
+  // kalmamak için; verilen tanımlar gömülü tablonun ÖNÜNE geçer.
+  const yeniKod: CodeTables = {
+    withholdings: [{ code: '999', name: 'Yeni tevkifat', rate: 50 }],
+    exemptions: [{ code: '998', name: 'Yeni istisna', taxType: 'KDV', documentType: 'ISTISNA' }],
+  }
+
+  const tevkifatli = (): InvoiceInput =>
+    girdi({
+      type: InvoiceType.TEVKIFAT,
+      lines: [
+        { name: 'Hizmet', quantity: 1, unitPrice: 1000, vatRate: 20, withholdingCode: '999' },
+      ],
+    })
+
+  it('tablosuz belge kurulamaz', () => {
+    const o = new InvoiceSession(tevkifatli())
+    expect(o.state.valid).toBe(false)
+    expect(o.state.issues[0]?.code).toBe('UNKNOWN_WITHHOLDING_CODE')
+  })
+
+  it('tabloyla belge kurulur ve oran koddan hesaplanır', () => {
+    const o = new InvoiceSession(tevkifatli(), { codeTables: yeniKod })
+    expect(o.state.valid).toBe(true)
+    // KDV 200; tevkifat %50 → 100. Ödenecek 1200 − 100 = 1100.
+    expect(formatAmount(o.state.totals!.withholdingTotalAmount)).toBe('100.00')
+    expect(formatAmount(o.state.totals!.payableAmount)).toBe('1100.00')
+  })
+
+  it('doğrulama da aynı tabloyu kullanır', () => {
+    // Belgeyi bir tabloyla üretip başkasıyla doğrulamak, kendi eklediğin
+    // kodu "tanımsız" göstermek demektir. Oturum tabloyu hepsine dağıtır.
+    const o = new InvoiceSession(tevkifatli(), { codeTables: yeniKod })
+    expect(o.state.issues).toEqual([])
+    expect(o.toXml()).toContain('<cbc:TaxTypeCode>999</cbc:TaxTypeCode>')
+  })
+
+  it('seçim listelerine de yansır', () => {
+    const o = new InvoiceSession(tevkifatli(), { codeTables: yeniKod })
+    expect(o.state.availableWithholdings.map((w) => w.code)).toContain('999')
+    expect(o.state.availableWithholdings.length).toBe(53)
+  })
+
+  it('muafiyet kodu tipe göre süzülmeye devam eder', () => {
+    const o = new InvoiceSession(girdi({ type: InvoiceType.ISTISNA }), { codeTables: yeniKod })
+    expect(o.state.availableExemptions.map((e) => e.code)).toContain('998')
+    // Yanlış tipte görünmez.
+    expect(
+      new InvoiceSession(girdi({ type: InvoiceType.IHRAC_KAYITLI }), {
+        codeTables: yeniKod,
+      }).state.availableExemptions.map((e) => e.code),
+    ).not.toContain('998')
+  })
+
+  it('öneri motoru da tabloyu görür', () => {
+    const o = new InvoiceSession(tevkifatli(), { codeTables: yeniKod })
+    const oneri = o.state.suggestions.find((x) => x.id === 'tevkifat/oran-bilgisi')
+    expect(oneri?.reason).toContain('Yeni tevkifat')
+    expect(oneri?.reason).toContain('%50')
+  })
+
+  it('gömülü tanımın üzerine yazabilir', () => {
+    // Yalnızca ekleme değil, düzeltme de mümkün: 603 gömülü tabloda %70.
+    const o = new InvoiceSession(
+      girdi({
+        type: InvoiceType.TEVKIFAT,
+        lines: [{ name: 'x', quantity: 1, unitPrice: 1000, vatRate: 20, withholdingCode: '603' }],
+      }),
+      { codeTables: { withholdings: [{ code: '603', name: 'Düzeltilmiş', rate: 90 }] } },
+    )
+    expect(formatAmount(o.state.totals!.withholdingTotalAmount)).toBe('180.00')
+  })
+
+  it('tablo verilmezse davranış değişmez', () => {
+    const a = new InvoiceSession(girdi()).toXml()
+    const b = new InvoiceSession(girdi(), { codeTables: {} }).toXml()
+    expect(a).toBe(b)
   })
 })

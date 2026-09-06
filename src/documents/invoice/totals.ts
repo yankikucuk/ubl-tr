@@ -1,4 +1,5 @@
 import {
+  type CodeTables,
   currencyDefinition,
   DEFAULT_CURRENCY_CODE,
   DEFAULT_UNIT_CODE,
@@ -225,7 +226,11 @@ const mergeSubtotals = (items: readonly TaxSubtotal[]): TaxSubtotal[] => {
  * // vatAmount 200, withholdingAmount 140 (200 × %70)
  * ```
  */
-export const calculateLine = (input: InvoiceLineInput, id: number): CalculatedLine => {
+export const calculateLine = (
+  input: InvoiceLineInput,
+  id: number,
+  tables?: CodeTables,
+): CalculatedLine => {
   const quantity = toDecimal(input.quantity)
   const unitPrice = toDecimal(input.unitPrice)
   const grossAmount = multiply(quantity, unitPrice)
@@ -253,7 +258,7 @@ export const calculateLine = (input: InvoiceLineInput, id: number): CalculatedLi
   let vatBase = lineExtensionAmount
   const taxes: TaxSubtotal[] = []
   for (const tax of input.taxes ?? []) {
-    const tanim = taxDefinition(tax.code)
+    const tanim = taxDefinition(tax.code, tables)
     if (tanim === undefined) {
       throw new DocumentInputError(
         'UNKNOWN_TAX_TYPE_CODE',
@@ -279,7 +284,7 @@ export const calculateLine = (input: InvoiceLineInput, id: number): CalculatedLi
 
   let withholdingAmount: Decimal | undefined
   if (input.withholdingCode !== undefined) {
-    const tanim = withholdingDefinition(input.withholdingCode)
+    const tanim = withholdingDefinition(input.withholdingCode, tables)
     if (tanim === undefined) {
       throw new DocumentInputError(
         'UNKNOWN_WITHHOLDING_CODE',
@@ -312,6 +317,14 @@ export interface InvoiceTotalsInput {
   readonly lines: readonly InvoiceLineInput[]
   /** ISO 4217 para birimi kodu; varsayılan `TRY`. */
   readonly currencyCode?: string
+  /**
+   * Gömülü GİB kod tablolarının önüne geçen ek tanımlar.
+   *
+   * GİB yeni bir vergi türü, tevkifat ya da para birimi tanımı
+   * yayımladığında sürüm beklemeden kullanmayı sağlar. Bkz.
+   * {@link CodeTables}.
+   */
+  readonly codeTables?: CodeTables
 }
 
 /**
@@ -366,8 +379,8 @@ export const calculateInvoice = (input: InvoiceTotalsInput): CalculatedInvoice =
     throw new DocumentInputError('NO_LINES', 'lines', 'Fatura en az bir satır içermelidir.')
   }
   const currencyCode = input.currencyCode ?? DEFAULT_CURRENCY_CODE
-  const scale = currencyDefinition(currencyCode).minorUnits
-  const lines = input.lines.map((line, index) => calculateLine(line, index + 1))
+  const scale = currencyDefinition(currencyCode, input.codeTables).minorUnits
+  const lines = input.lines.map((line, index) => calculateLine(line, index + 1, input.codeTables))
 
   const vatSubtotals = mergeSubtotals(
     lines.map((line) => {
@@ -395,7 +408,7 @@ export const calculateInvoice = (input: InvoiceTotalsInput): CalculatedInvoice =
     lines.flatMap((line) => {
       const kod = line.input.withholdingCode
       if (kod === undefined || line.withholdingAmount === undefined) return []
-      const tanim = withholdingDefinition(kod)
+      const tanim = withholdingDefinition(kod, input.codeTables)
       if (tanim === undefined) return []
       return [
         {
@@ -442,7 +455,9 @@ export const calculateInvoice = (input: InvoiceTotalsInput): CalculatedInvoice =
   )
   const otherTaxTotalSigned = sum(
     otherTaxSubtotals.map((s) =>
-      taxDefinition(s.code)?.deductsFromTotal === true ? negate(s.taxAmount) : s.taxAmount,
+      taxDefinition(s.code, input.codeTables)?.deductsFromTotal === true
+        ? negate(s.taxAmount)
+        : s.taxAmount,
     ),
     scale,
   )

@@ -1,4 +1,5 @@
 import {
+  type CodeTables,
   currencyDefinition,
   DEFAULT_CURRENCY_CODE,
   documentNamespace,
@@ -278,6 +279,26 @@ export interface InvoiceInput {
 /** {@link buildInvoice} seçenekleri. */
 export interface BuildInvoiceOptions {
   /**
+   * Gömülü GİB kod tablolarının önüne geçen ek tanımlar.
+   *
+   * GİB yeni bir muafiyet, tevkifat ya da vergi türü kodu yayımladığında
+   * kütüphane sürümü beklemeden kullanmayı sağlar; var olan bir tanım da
+   * düzeltilebilir. Bkz. {@link CodeTables}.
+   *
+   * @example
+   * ```ts
+   * buildInvoiceXml(girdi, {
+   *   codeTables: {
+   *     exemptions: [
+   *       { code: '999', name: 'Yeni istisna', taxType: 'KDV', documentType: 'ISTISNA' },
+   *     ],
+   *   },
+   * })
+   * ```
+   */
+  readonly codeTables?: CodeTables
+
+  /**
    * İmza zarfı (`ext:UBLExtensions`) yazılsın mı. Varsayılan `true`.
    *
    * GİB'in UBL-Invoice şemasında kök sıranın **ilk** öğesidir. İskelet
@@ -335,8 +356,13 @@ const asFraction = (rate: NumericInput): Decimal => {
 }
 
 /** Bir tutarı para birimi öznitelikli `cbc:` öğesine çevirir. */
-const amountLeaf = (name: string, value: Decimal, currencyCode: string): XmlElement =>
-  leaf(CBC, name, toStringValue(value, currencyDefinition(currencyCode).minorUnits), [
+const amountLeaf = (
+  name: string,
+  value: Decimal,
+  currencyCode: string,
+  tables?: CodeTables,
+): XmlElement =>
+  leaf(CBC, name, toStringValue(value, currencyDefinition(currencyCode, tables).minorUnits), [
     { name: 'currencyID', value: currencyCode },
   ])
 
@@ -345,10 +371,11 @@ const buildTaxSubtotal = (
   subtotal: TaxSubtotal,
   currencyCode: string,
   exemption?: { readonly code?: string | undefined; readonly reason?: string | undefined },
+  tables?: CodeTables,
 ): XmlElement =>
   container(CAC, 'TaxSubtotal', [
-    amountLeaf('TaxableAmount', subtotal.taxableAmount, currencyCode),
-    amountLeaf('TaxAmount', subtotal.taxAmount, currencyCode),
+    amountLeaf('TaxableAmount', subtotal.taxableAmount, currencyCode, tables),
+    amountLeaf('TaxAmount', subtotal.taxAmount, currencyCode, tables),
     leaf(CBC, 'Percent', toStringValue(subtotal.rate, 2)),
     container(CAC, 'TaxCategory', [
       optionalLeaf(CBC, 'TaxExemptionReasonCode', exemption?.code),
@@ -359,7 +386,9 @@ const buildTaxSubtotal = (
         CBC,
         'TaxExemptionReason',
         exemption?.reason ??
-          (exemption?.code === undefined ? undefined : exemptionDefinition(exemption.code)?.name),
+          (exemption?.code === undefined
+            ? undefined
+            : exemptionDefinition(exemption.code, tables)?.name),
       ),
       container(CAC, 'TaxScheme', [
         leaf(CBC, 'Name', subtotal.name),
@@ -373,6 +402,7 @@ const buildInvoiceLine = (
   line: CalculatedLine,
   currencyCode: string,
   kalem: InvoiceBuilderLineInput | undefined,
+  tables?: CodeTables,
 ): XmlElement => {
   const girdi = line.input
   const delivery = kalem?.delivery
@@ -387,7 +417,7 @@ const buildInvoiceLine = (
       toStringValueRange(line.quantity, QUANTITY_MIN_DECIMALS, QUANTITY_MAX_DECIMALS),
       [{ name: 'unitCode', value: lineUnitCode(girdi) }],
     ),
-    amountLeaf('LineExtensionAmount', line.lineExtensionAmount, currencyCode),
+    amountLeaf('LineExtensionAmount', line.lineExtensionAmount, currencyCode, tables),
     delivery === undefined ? undefined : buildDelivery(delivery),
     isZero(line.discountAmount)
       ? undefined
@@ -404,12 +434,12 @@ const buildInvoiceLine = (
                 'MultiplierFactorNumeric',
                 toStringValueRange(asFraction(girdi.discountRate), 0, 6),
               ),
-          amountLeaf('Amount', line.discountAmount, currencyCode),
-          amountLeaf('BaseAmount', line.grossAmount, currencyCode),
+          amountLeaf('Amount', line.discountAmount, currencyCode, tables),
+          amountLeaf('BaseAmount', line.grossAmount, currencyCode, tables),
         ]),
     container(CAC, 'TaxTotal', [
-      amountLeaf('TaxAmount', line.vatAmount, currencyCode),
-      ...line.taxes.map((tax) => buildTaxSubtotal(tax, currencyCode)),
+      amountLeaf('TaxAmount', line.vatAmount, currencyCode, tables),
+      ...line.taxes.map((tax) => buildTaxSubtotal(tax, currencyCode, undefined, tables)),
       buildTaxSubtotal(
         {
           code: VAT_TAX_CODE,
@@ -422,6 +452,7 @@ const buildInvoiceLine = (
         girdi.exemptionCode === undefined && girdi.exemptionReason === undefined
           ? undefined
           : { code: girdi.exemptionCode, reason: girdi.exemptionReason },
+        tables,
       ),
     ]),
     container(CAC, 'Item', [
@@ -443,7 +474,7 @@ const buildInvoiceLine = (
         optionalLeaf(CBC, 'SerialID', kalem?.serialId),
       ]),
     ]),
-    container(CAC, 'Price', [amountLeaf('PriceAmount', line.unitPrice, currencyCode)]),
+    container(CAC, 'Price', [amountLeaf('PriceAmount', line.unitPrice, currencyCode, tables)]),
   ])
 }
 
@@ -495,13 +526,21 @@ export const buildInvoice = (
     )
   }
 
+  const tables = options.codeTables
   const currencyCode = input.currencyCode ?? DEFAULT_CURRENCY_CODE
-  const totals = calculateInvoice({ lines: input.lines, currencyCode })
+  const totals = calculateInvoice({
+    lines: input.lines,
+    currencyCode,
+    ...(options.codeTables === undefined ? {} : { codeTables: options.codeTables }),
+  })
 
   const yazyla =
     options.amountInWords === false
       ? undefined
-      : amountInWordsNote(totals.payableAmount, currencyCode, options.amountInWords ?? {})
+      : amountInWordsNote(totals.payableAmount, currencyCode, {
+          ...(options.codeTables === undefined ? {} : { codeTables: options.codeTables }),
+          ...(options.amountInWords ?? {}),
+        })
 
   const notlar = [...(yazyla === undefined ? [] : [yazyla]), ...(input.notes ?? [])]
 
@@ -647,8 +686,13 @@ export const buildInvoice = (
     container(CAC, 'TaxTotal', [
       // Kök vergi toplamı alt toplamların MUTLAK toplamıdır: stopaj burada
       // pozitif görünür, ödenecek tutar hesabında ise eksi girer.
-      amountLeaf('TaxAmount', add(totals.vatTotalAmount, totals.otherTaxTotalAmount), currencyCode),
-      ...totals.otherTaxSubtotals.map((s) => buildTaxSubtotal(s, currencyCode)),
+      amountLeaf(
+        'TaxAmount',
+        add(totals.vatTotalAmount, totals.otherTaxTotalAmount),
+        currencyCode,
+        tables,
+      ),
+      ...totals.otherTaxSubtotals.map((s) => buildTaxSubtotal(s, currencyCode, undefined, tables)),
       ...totals.vatSubtotals.map((s) =>
         buildTaxSubtotal(
           s,
@@ -656,23 +700,28 @@ export const buildInvoice = (
           s.exemptionCode === undefined && s.exemptionReason === undefined
             ? undefined
             : { code: s.exemptionCode, reason: s.exemptionReason },
+          tables,
         ),
       ),
     ]),
     totals.withholdingSubtotals.length === 0
       ? undefined
       : container(CAC, 'WithholdingTaxTotal', [
-          amountLeaf('TaxAmount', totals.withholdingTotalAmount, currencyCode),
-          ...totals.withholdingSubtotals.map((s) => buildTaxSubtotal(s, currencyCode)),
+          amountLeaf('TaxAmount', totals.withholdingTotalAmount, currencyCode, tables),
+          ...totals.withholdingSubtotals.map((s) =>
+            buildTaxSubtotal(s, currencyCode, undefined, tables),
+          ),
         ]),
     container(CAC, 'LegalMonetaryTotal', [
-      amountLeaf('LineExtensionAmount', totals.lineExtensionAmount, currencyCode),
-      amountLeaf('TaxExclusiveAmount', totals.taxExclusiveAmount, currencyCode),
-      amountLeaf('TaxInclusiveAmount', totals.taxInclusiveAmount, currencyCode),
-      amountLeaf('AllowanceTotalAmount', totals.allowanceTotalAmount, currencyCode),
-      amountLeaf('PayableAmount', totals.payableAmount, currencyCode),
+      amountLeaf('LineExtensionAmount', totals.lineExtensionAmount, currencyCode, tables),
+      amountLeaf('TaxExclusiveAmount', totals.taxExclusiveAmount, currencyCode, tables),
+      amountLeaf('TaxInclusiveAmount', totals.taxInclusiveAmount, currencyCode, tables),
+      amountLeaf('AllowanceTotalAmount', totals.allowanceTotalAmount, currencyCode, tables),
+      amountLeaf('PayableAmount', totals.payableAmount, currencyCode, tables),
     ]),
-    ...totals.lines.map((line) => buildInvoiceLine(line, currencyCode, input.lines[line.id - 1])),
+    ...totals.lines.map((line) =>
+      buildInvoiceLine(line, currencyCode, input.lines[line.id - 1], tables),
+    ),
   ])
 
   return { root, totals }

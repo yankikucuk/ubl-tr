@@ -123,6 +123,24 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
   - `removeIdentification` / `setIdentifications` — kimlik listesi
     yardımcıları; liste boşalınca alan tümden kaldırılır (`schemeID`
     taşımayan boş `cac:PartyIdentification` Schematron'u ihlal eder)
+- **Kod tablosu genişletme** (`CodeTables`) — gömülü GİB kod listelerinin
+  önüne geçen ek tanımlar; yeni kod eklenebilir, var olan tanım
+  düzeltilebilir. GİB bir kod yayımladığında paket sürümü beklemek
+  gerekmez.
+  - `buildInvoiceXml(girdi, { codeTables })`,
+    `calculateInvoice({ …, codeTables })`,
+    `validateInvoiceRules(root, { codeTables })`,
+    `new InvoiceSession(girdi, { codeTables })`
+  - Oturum tabloyu hepsine birden dağıtır: hesaplama, üretim, doğrulama,
+    öneriler ve seçim listeleri
+  - Arama işlevleri ikinci parametre olarak tablo alır:
+    `withholdingDefinition(kod, tablolar)`, `taxDefinition`,
+    `exemptionDefinition`, `unitDefinition`, `currencyDefinition`,
+    `isValidTaxCode`, `isValidExemptionCode`, `isValidUnitCode`
+  - Tablo **çağrı başına** verilir; süreç genelinde değişen bir tekil
+    nesne değildir. Böylece çok kiracılı kullanım mümkün, arama işlevleri
+    saf ve kütüphane `EventEmitter` gerektirmediği için tarayıcıda
+    çalışmayı sürdürüyor
 - **`DocumentInputError`** — kurucuların reddettiği girdi için `code` ve
   `path` taşıyan hata. `RangeError`'dan türer; mevcut `instanceof`
   denetimleri bozulmaz. Oturum bu iki alanı doğrudan doğrulama bulgusuna

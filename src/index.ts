@@ -4,6 +4,7 @@
  * Bu paket belge üretir, ayrıştırır ve doğrular. Belgeyi imzalamaz ve
  * göndermez; imza ayrı bir projedir, gönderim ise çağıranın kararıdır.
  */
+export { findByCode, type CodeTables } from './constants/index.js'
 export {
   Currency,
   currencyDefinition,
@@ -190,6 +191,7 @@ export {
   structureModel,
   toResult,
   validateInvoiceRules,
+  type ValidateRulesOptions,
   validateStructure,
   type ChildRule,
   type ElementModel,

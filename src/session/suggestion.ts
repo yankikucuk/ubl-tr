@@ -1,5 +1,6 @@
 import type { InvoiceBuilderLineInput, InvoiceInput } from '../builders/index.js'
 import {
+  type CodeTables,
   InvoiceProfile,
   InvoiceType,
   isValidWithholdingCode,
@@ -44,9 +45,10 @@ export interface SuggestionRule {
    * Kuralı çalıştırır.
    *
    * @param input - Mevcut fatura girdisi
+   * @param tables - Gömülü kod tablolarının önüne geçen ek tanımlar
    * @returns Üretilen öneriler; kural bu duruma uymuyorsa boş dizi
    */
-  readonly run: (input: InvoiceInput) => readonly Suggestion[]
+  readonly run: (input: InvoiceInput, tables?: CodeTables) => readonly Suggestion[]
 }
 
 const oner = (
@@ -335,10 +337,10 @@ export const SUGGESTION_RULES: readonly SuggestionRule[] = [
   },
   {
     id: 'tevkifat/oran-bilgisi',
-    run: (input: InvoiceInput): readonly Suggestion[] =>
+    run: (input: InvoiceInput, tables?: CodeTables): readonly Suggestion[] =>
       input.lines.flatMap((line, i) => {
         if (line.withholdingCode === undefined) return []
-        const tanim = withholdingDefinition(line.withholdingCode)
+        const tanim = withholdingDefinition(line.withholdingCode, tables)
         if (tanim === undefined) return []
         return [
           oner(
@@ -386,4 +388,5 @@ export const SUGGESTION_RULES: readonly SuggestionRule[] = [
 export const suggest = (
   input: InvoiceInput,
   rules: readonly SuggestionRule[] = SUGGESTION_RULES,
-): readonly Suggestion[] => rules.flatMap((rule) => rule.run(input))
+  tables?: CodeTables,
+): readonly Suggestion[] => rules.flatMap((rule) => rule.run(input, tables))

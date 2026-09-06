@@ -13,6 +13,7 @@ import type {
   InvoiceTypeCode,
   WithholdingDefinition,
 } from '../constants/index.js'
+import type { CodeTables } from '../constants/index.js'
 import type { XmlElement } from '../core/index.js'
 import { type CalculatedInvoice, DocumentInputError } from '../documents/index.js'
 import {
@@ -121,6 +122,26 @@ export interface InvoiceSessionOptions {
    * sorgulamaz — sonucu siz verirsiniz. Bkz. {@link CustomerLiability}.
    */
   readonly liability?: CustomerLiability
+  /**
+   * Gömülü GİB kod tablolarının önüne geçen ek tanımlar.
+   *
+   * Oturum bu tabloyu **hepsine birden** dağıtır: hesaplama, belge üretimi,
+   * doğrulama, öneriler ve seçim listeleri. Tek yerde verilir, her yerde
+   * tutarlı davranır — belgeyi bir tabloyla üretip başkasıyla doğrulama
+   * riski yoktur. Bkz. {@link CodeTables}.
+   *
+   * @example
+   * ```ts
+   * new InvoiceSession(girdi, {
+   *   codeTables: {
+   *     exemptions: [
+   *       { code: '999', name: 'Yeni istisna', taxType: 'KDV', documentType: 'ISTISNA' },
+   *     ],
+   *   },
+   * })
+   * ```
+   */
+  readonly codeTables?: CodeTables
   /**
    * İhracat oturumu mu.
    *
@@ -498,7 +519,7 @@ export class InvoiceSession {
    * ```
    */
   build(): { readonly root: XmlElement; readonly totals: CalculatedInvoice } {
-    return buildInvoice(this.#input, this.#options.build ?? {})
+    return buildInvoice(this.#input, this.#buildOptions())
   }
 
   /**
@@ -514,7 +535,20 @@ export class InvoiceSession {
    * ```
    */
   toXml(options?: BuildInvoiceOptions): string {
-    return buildInvoiceXml(this.#input, options ?? this.#options.build ?? {})
+    return buildInvoiceXml(this.#input, options ?? this.#buildOptions())
+  }
+
+  /**
+   * Üretim seçeneklerini kod tablosuyla birleştirir.
+   *
+   * `codeTables` oturum düzeyinde verilir; `build` seçenekleri kendi
+   * tablosunu taşıyorsa o üstün gelir — daha özel olan kazanır.
+   */
+  #buildOptions(): BuildInvoiceOptions {
+    const build = this.#options.build ?? {}
+    const tables = this.#options.codeTables
+    if (tables === undefined) return build
+    return { codeTables: tables, ...build }
   }
 
   /** Durumu yeniden türetir ve dinleyicilere haber verir. */
@@ -528,6 +562,7 @@ export class InvoiceSession {
   #derive(): SessionState {
     const input = this.#input
     const liability = this.#options.liability
+    const tables = this.#options.codeTables
     // `profile` ve `type` girdide zorunludur; yalnızca para birimi
     // isteğe bağlıdır ve verilmediğinde varsayılan Türk lirasıdır.
     const baglam = {
@@ -543,9 +578,12 @@ export class InvoiceSession {
     try {
       // Doğrulama GERÇEK BELGE üzerinde yapılır. Girdiyi denetleyen bir
       // tasarım, belgeye dönüşürken ortaya çıkan hataları göremez.
-      const { root, totals: hesap } = buildInvoice(input, this.#options.build ?? {})
+      const { root, totals: hesap } = buildInvoice(input, this.#buildOptions())
       totals = hesap
-      issues = [...validateStructure(root).issues, ...validateInvoiceRules(root).issues]
+      issues = [
+        ...validateStructure(root).issues,
+        ...validateInvoiceRules(root, tables === undefined ? {} : { codeTables: tables }).issues,
+      ]
     } catch (error) {
       // Üretim reddedildiğinde de alan düzeyinde geri bildirim verilir:
       // DocumentInputError hangi girdi alanından geldiğini taşır, form o
@@ -574,10 +612,10 @@ export class InvoiceSession {
       ),
       allowedTypes: allowedTypesForProfile(input.profile, liability),
       liability,
-      availableExemptions: availableExemptions(input.type),
-      availableWithholdings: availableWithholdings(input.type),
+      availableExemptions: availableExemptions(input.type, tables),
+      availableWithholdings: availableWithholdings(input.type, tables),
       issues,
-      suggestions: suggest(input, this.#options.suggestionRules),
+      suggestions: suggest(input, this.#options.suggestionRules, tables),
       valid: !issues.some((i) => i.severity === 'error'),
     }
   }

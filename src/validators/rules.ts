@@ -1,4 +1,5 @@
 import {
+  type CodeTables,
   currencyDefinition,
   Currency,
   isValidExemptionCode,
@@ -98,6 +99,18 @@ const toDecimal = (value: string | undefined): Decimal | undefined => {
   }
 }
 
+/** {@link validateInvoiceRules} seçenekleri. */
+export interface ValidateRulesOptions {
+  /**
+   * Gömülü GİB kod tablolarının önüne geçen ek tanımlar.
+   *
+   * Belgeyi üretirken hangi tabloyu kullandıysanız doğrularken de aynısını
+   * verin; aksi hâlde kendi eklediğiniz kod doğrulamada "tanımsız" görünür.
+   * Bkz. {@link CodeTables}.
+   */
+  readonly codeTables?: CodeTables
+}
+
 /**
  * Bir UBL-TR faturasını GİB'in iş kurallarına karşı doğrular.
  *
@@ -130,7 +143,11 @@ const toDecimal = (value: string | undefined): Decimal | undefined => {
  * validateInvoiceRules(root).issues.filter((i) => i.severity === 'error')
  * ```
  */
-export const validateInvoiceRules = (root: XmlElement): ValidationResult => {
+export const validateInvoiceRules = (
+  root: XmlElement,
+  options: ValidateRulesOptions = {},
+): ValidationResult => {
+  const tables = options.codeTables
   const issues: ValidationIssue[] = []
   const ekle = (
     code: string,
@@ -258,7 +275,7 @@ export const validateInvoiceRules = (root: XmlElement): ValidationResult => {
     // yazmaktır; beklenen `C62`'dir.
     if (oge.name === 'InvoicedQuantity' || oge.name === 'DeliveredQuantity') {
       const birim = attribute(oge, 'unitCode')
-      if (birim !== undefined && !isValidUnitCode(birim)) {
+      if (birim !== undefined && !isValidUnitCode(birim, tables)) {
         ekle(
           'UNKNOWN_UNIT_CODE',
           `${yol}/@unitCode`,
@@ -271,15 +288,15 @@ export const validateInvoiceRules = (root: XmlElement): ValidationResult => {
     // Vergi türü kodu kod listesinden gelmeli.
     if (oge.name === 'TaxTypeCode' && oge.kind === 'leaf') {
       const kod = oge.text
-      const tevkifatMi = withholdingDefinition(kod) !== undefined
-      if (!tevkifatMi && !isValidTaxCode(kod)) {
+      const tevkifatMi = withholdingDefinition(kod, tables) !== undefined
+      if (!tevkifatMi && !isValidTaxCode(kod, tables)) {
         ekle('UNKNOWN_TAX_TYPE_CODE', yol, `"${kod}" tanımlı bir vergi türü kodu değil.`)
       }
     }
 
     // Muafiyet kodu kod listesinden gelmeli.
     if (oge.name === 'TaxExemptionReasonCode' && oge.kind === 'leaf') {
-      if (!isValidExemptionCode(oge.text)) {
+      if (!isValidExemptionCode(oge.text, tables)) {
         ekle('UNKNOWN_EXEMPTION_CODE', yol, `"${oge.text}" tanımlı bir muafiyet kodu değil.`)
       }
     }
@@ -329,7 +346,7 @@ export const validateInvoiceRules = (root: XmlElement): ValidationResult => {
       const kod = sema === undefined ? undefined : text(sema, 'TaxTypeCode')
       const oran = text(altToplam, 'Percent')
       if (kod === undefined) continue
-      const tanim = withholdingDefinition(kod)
+      const tanim = withholdingDefinition(kod, tables)
       if (tanim === undefined) {
         ekle(
           'UNKNOWN_WITHHOLDING_CODE',
@@ -402,7 +419,7 @@ export const validateInvoiceRules = (root: XmlElement): ValidationResult => {
 
   // ── Para birimi öznitelikleri belge para birimiyle aynı olmalı ───────
   if (paraBirimi !== undefined) {
-    const basamak = currencyDefinition(paraBirimi).minorUnits
+    const basamak = currencyDefinition(paraBirimi, tables).minorUnits
     if (toplamlar?.kind === 'container') {
       for (const alan of TWO_DECIMAL_FIELDS) {
         const oge = child(toplamlar, CBC, alan)

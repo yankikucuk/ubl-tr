@@ -1,3 +1,4 @@
+import { type CodeTables, findByCode } from './code-tables.js'
 /**
  * Bir para biriminin, tutar aritmetiği için gereken tanımı.
  *
@@ -71,7 +72,9 @@ export const DEFAULT_CURRENCY_CODE = 'TRY'
  * currencyDefinition('XYZ').minorUnits // 2 — bilinmeyen kod, varsayılan
  * ```
  */
-export const currencyDefinition = (code: string): CurrencyDefinition => {
+export const currencyDefinition = (code: string, tables?: CodeTables): CurrencyDefinition => {
+  const ustunde = findByCode(tables?.currencies, code)
+  if (ustunde !== undefined) return ustunde
   const bilinen = (Currency as Record<string, CurrencyDefinition | undefined>)[code]
   return bilinen ?? { code, minorUnits: 2, name: code }
 }

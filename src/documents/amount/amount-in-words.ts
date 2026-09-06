@@ -1,4 +1,8 @@
-import { currencyDefinition, DEFAULT_CURRENCY_CODE } from '../../constants/index.js'
+import {
+  type CodeTables,
+  currencyDefinition,
+  DEFAULT_CURRENCY_CODE,
+} from '../../constants/index.js'
 import { type Decimal, rescale, toStringValue } from '../../core/index.js'
 
 /** Birler basamağı. Sıfır ayrı ele alınır. */
@@ -92,6 +96,13 @@ export const integerToWords = (value: bigint): string => {
 /** {@link amountInWords} seçenekleri. */
 export interface AmountInWordsOptions {
   /**
+   * Gömülü para birimi tablosunun önüne geçen tanımlar.
+   *
+   * Ondalık basamak sayısı ve birim adları buradan okunur; bkz.
+   * {@link CodeTables}.
+   */
+  readonly codeTables?: CodeTables
+  /**
    * Harf biçimi. Varsayılan `'title'`.
    *
    * `'upper'` seçildiğinde dönüşüm `toLocaleUpperCase('tr')` ile yapılır.
@@ -153,7 +164,7 @@ export const amountInWords = (
   currencyCode: string = DEFAULT_CURRENCY_CODE,
   options: AmountInWordsOptions = {},
 ): string => {
-  const birim = currencyDefinition(currencyCode)
+  const birim = currencyDefinition(currencyCode, options.codeTables)
   // ÖNCE yuvarla, SONRA ayır. Ters sıra "yüz kuruş" üretir.
   const yuvarli = rescale(amount, birim.minorUnits)
   const negatif = yuvarli.units < 0n
@@ -229,4 +240,5 @@ export const amountInWordsNote = (
 export const formatAmount = (
   amount: Decimal,
   currencyCode: string = DEFAULT_CURRENCY_CODE,
-): string => toStringValue(amount, currencyDefinition(currencyCode).minorUnits)
+  tables?: CodeTables,
+): string => toStringValue(amount, currencyDefinition(currencyCode, tables).minorUnits)

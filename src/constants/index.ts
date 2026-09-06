@@ -1,3 +1,4 @@
+export { findByCode, type CodeTables } from './code-tables.js'
 export {
   Currency,
   currencyDefinition,
