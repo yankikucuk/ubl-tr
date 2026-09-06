@@ -12,15 +12,27 @@ export {
   type ShipmentInput,
   type TransportEquipmentInput,
 } from './despatch.js'
-export { buildDelivery, type CustomsDeclarationInput, type DeliveryInput } from './delivery.js'
 export {
-  buildInvoice,
-  buildInvoiceXml,
+  buildDocumentReference,
   type AdditionalDocumentReferenceInput,
   type AttachmentInput,
   type DocumentReferenceInput,
   type EmbeddedBinaryInput,
   type ExternalReferenceInput,
+} from './document-reference.js'
+export {
+  eArchiveDocuments,
+  onlineSaleDelivery,
+  type EArchiveContext,
+  type EArchiveInput,
+  type EArchiveSendType,
+  type OnlineSaleInput,
+  type SgkInput,
+} from './earchive.js'
+export { buildDelivery, type CustomsDeclarationInput, type DeliveryInput } from './delivery.js'
+export {
+  buildInvoice,
+  buildInvoiceXml,
   type PaymentTermsInput,
   type SignatureInput,
   type BillingReferenceInput,

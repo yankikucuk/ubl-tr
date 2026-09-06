@@ -58,6 +58,7 @@ export {
   type InvoiceTypeCode,
 } from './invoice.js'
 export { Namespace, NamespacePrefix, type NamespaceUri } from './namespace.js'
+export { SGK_TYPE_DEFINITIONS, sgkTypeDefinition, type SgkTypeDefinition } from './sgk.js'
 export {
   isValidPaymentMeansCode,
   PAYMENT_MEANS_CODES,

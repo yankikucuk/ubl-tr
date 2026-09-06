@@ -45,6 +45,12 @@ import {
 
 import { buildDelivery, type DeliveryInput } from './delivery.js'
 import {
+  type AdditionalDocumentReferenceInput,
+  buildDocumentReference,
+  type DocumentReferenceInput,
+} from './document-reference.js'
+import { eArchiveDocuments, type EArchiveInput, onlineSaleDelivery } from './earchive.js'
+import {
   buildParty,
   buildTaxRepresentativeParty,
   type PartyInput,
@@ -125,83 +131,6 @@ export interface InvoicePeriodInput {
   /** Dönem bitiş saati (`HH:mm:ss`). */
   readonly endTime?: string
 }
-
-/** Belgeye gömülü ikili dosya — `cbc:EmbeddedDocumentBinaryObject`. */
-export interface EmbeddedBinaryInput {
-  /** Dosyanın base64 kodlanmış içeriği. */
-  readonly content: string
-  /**
-   * MIME türü — `mimeCode` özniteliği.
-   *
-   * UBL bu özniteliği zorunlu tutar; `application/pdf`, `image/png` gibi.
-   */
-  readonly mimeCode: string
-  /** Dosya adı — `filename` özniteliği. */
-  readonly fileName?: string
-}
-
-/** Belgenin dış adresi — `cac:ExternalReference`. */
-export interface ExternalReferenceInput {
-  /** Belgenin adresi — `cbc:URI`. */
-  readonly uri: string
-  /** MIME türü — `cbc:MimeCode`. */
-  readonly mimeCode?: string
-  /** Dosya adı — `cbc:FileName`. */
-  readonly fileName?: string
-  /** Serbest açıklama — `cbc:Description`. */
-  readonly description?: string
-}
-
-/**
- * Belge atfına iliştirilen dosya — `cac:Attachment`.
- *
- * İki yol vardır ve ikisi birlikte de verilebilir: dosyayı belgenin içine
- * base64 olarak gömmek ya da dış adresini yazmak. Gömme, belgeyi tek
- * parça hâlinde taşınabilir kılar; e-Arşiv'de görüntüleme şablonu ve ek
- * belgeler bu yolla iletilir.
- */
-export interface AttachmentInput {
-  /** Gömülü dosya. */
-  readonly embeddedBinary?: EmbeddedBinaryInput
-  /** Dış adres. */
-  readonly externalReference?: ExternalReferenceInput
-}
-
-/** Genel belge atfı — `cac:AdditionalDocumentReference`. */
-export interface AdditionalDocumentReferenceInput {
-  /** Atıf yapılan belgenin numarası ya da değeri — `cbc:ID`. */
-  readonly id: string
-  /**
-   * Numaranın şeması — `schemeID`.
-   *
-   * Bazı kurallar bu şemayı anahtar olarak arar: şarj hizmeti
-   * faturalarında `ESURaporID` taşıyan bir ek belge zorunludur.
-   */
-  readonly schemeId?: string
-  /** Belgenin tarihi (`YYYY-MM-DD`). */
-  readonly issueDate?: string
-  /**
-   * Belge tipi kodu — `cbc:DocumentTypeCode`.
-   *
-   * GİB bu alanı anahtar olarak kullanır: `EXT_SEND_METHOD` gönderim
-   * şekli, `DOSYA_NO` SGK dosya numarası gibi.
-   */
-  readonly documentTypeCode?: string
-  /** Belge tipi ya da değeri — `cbc:DocumentType`. */
-  readonly documentType?: string
-  /** Serbest açıklama — `cbc:DocumentDescription`. */
-  readonly description?: string
-  /** İliştirilen dosya — `cac:Attachment`. */
-  readonly attachment?: AttachmentInput
-}
-
-/**
- * İrsaliye, makbuz ve sipariş kaynağı atıflarının ortak girdisi.
- *
- * UBL'de bu üçü de `cac:DocumentReference` tipindedir; ek belge atfıyla
- * aynı alanları taşırlar.
- */
-export type DocumentReferenceInput = AdditionalDocumentReferenceInput
 
 /** Sözleşme atfı — `cac:ContractDocumentReference`. */
 export interface ContractDocumentReferenceInput {
@@ -401,6 +330,16 @@ export interface InvoiceInput {
    * Kamu alımlarında ihale ya da talep belgesi bu alanda taşınır.
    */
   readonly originatorDocumentReferences?: readonly DocumentReferenceInput[]
+  /**
+   * e-Arşiv'e özgü bilgiler.
+   *
+   * GİB bunları ayrı öğelerle değil, belirli `documentTypeCode` değerleri
+   * taşıyan ek belge atıflarıyla ister. Buradan verilen bilgiler
+   * {@link InvoiceInput.additionalDocuments} girdilerinin **önüne** yazılır;
+   * internet satışının teslim bilgisi de {@link InvoiceInput.delivery} ile
+   * birleştirilir ve açıkça verilen alanlar üstün gelir.
+   */
+  readonly eArchive?: EArchiveInput
   /** Ödeme koşulları. */
   readonly paymentTerms?: PaymentTermsInput
   /**
@@ -614,52 +553,6 @@ const buildAllowanceCharge = (
       ? undefined
       : amountLeaf('BaseAmount', asDecimal(kalem.baseAmount), currencyCode, tables),
   ])
-
-/** İliştirilen dosyayı `cac:Attachment` öğesine çevirir. */
-const buildAttachment = (attachment: AttachmentInput): XmlElement | undefined => {
-  const gomulu = attachment.embeddedBinary
-  const dis = attachment.externalReference
-  if (gomulu === undefined && dis === undefined) return undefined
-  return container(CAC, 'Attachment', [
-    gomulu === undefined
-      ? undefined
-      : leaf(CBC, 'EmbeddedDocumentBinaryObject', gomulu.content, [
-          { name: 'mimeCode', value: gomulu.mimeCode },
-          ...(gomulu.fileName === undefined ? [] : [{ name: 'filename', value: gomulu.fileName }]),
-        ]),
-    dis === undefined
-      ? undefined
-      : container(CAC, 'ExternalReference', [
-          leaf(CBC, 'URI', dis.uri),
-          optionalLeaf(CBC, 'MimeCode', dis.mimeCode),
-          optionalLeaf(CBC, 'FileName', dis.fileName),
-          optionalLeaf(CBC, 'Description', dis.description),
-        ]),
-  ])
-}
-
-/**
- * Bir belge atfını verilen adla `cac:` öğesine çevirir.
- *
- * `AdditionalDocumentReference`, `DespatchDocumentReference`,
- * `ReceiptDocumentReference` ve `OriginatorDocumentReference` UBL'de aynı
- * `DocumentReference` tipindedir; öğe sırası da ortaktır.
- */
-const buildDocumentReference = (name: string, ref: DocumentReferenceInput): XmlElement =>
-  container(CAC, name, [
-    leaf(
-      CBC,
-      'ID',
-      ref.id,
-      ref.schemeId === undefined ? [] : [{ name: 'schemeID', value: ref.schemeId }],
-    ),
-    optionalLeaf(CBC, 'IssueDate', ref.issueDate),
-    optionalLeaf(CBC, 'DocumentTypeCode', ref.documentTypeCode),
-    optionalLeaf(CBC, 'DocumentType', ref.documentType),
-    optionalLeaf(CBC, 'DocumentDescription', ref.description),
-    ref.attachment === undefined ? undefined : buildAttachment(ref.attachment),
-  ])
-
 /** Bir vergi alt toplamını `cac:TaxSubtotal` öğesine çevirir. */
 const buildTaxSubtotal = (
   subtotal: TaxSubtotal,
@@ -857,6 +750,15 @@ export const buildInvoice = (
     )
   }
 
+  // İnternet satışının teslim bilgisi belgedekiyle birleşir; açıkça
+  // verilen alanlar üstün gelir.
+  const satisTeslimi =
+    input.eArchive?.onlineSale === undefined
+      ? undefined
+      : onlineSaleDelivery(input.eArchive.onlineSale)
+  const teslim =
+    satisTeslimi === undefined ? input.delivery : { ...satisTeslimi, ...(input.delivery ?? {}) }
+
   const root = container(INVOICE_NS, 'Invoice', [
     (options.includeUblExtensions ?? true)
       ? container(EXT, 'UBLExtensions', [
@@ -916,9 +818,12 @@ export const buildInvoice = (
           ),
           optionalLeaf(CBC, 'IssueDate', input.contractDocument.issueDate),
         ]),
-    ...(input.additionalDocuments ?? []).map((belge) =>
-      buildDocumentReference('AdditionalDocumentReference', belge),
-    ),
+    ...[
+      ...(input.eArchive === undefined
+        ? []
+        : eArchiveDocuments(input.eArchive, { uuid: input.uuid, issueDate: input.issueDate })),
+      ...(input.additionalDocuments ?? []),
+    ].map((belge) => buildDocumentReference('AdditionalDocumentReference', belge)),
     (options.includeSignature ?? true)
       ? buildSignature(input.signature, input.supplier)
       : undefined,
@@ -930,7 +835,7 @@ export const buildInvoice = (
     input.taxRepresentative === undefined
       ? undefined
       : buildTaxRepresentativeParty(input.taxRepresentative),
-    input.delivery === undefined ? undefined : buildDelivery(input.delivery),
+    teslim === undefined ? undefined : buildDelivery(teslim),
     input.paymentMeans === undefined
       ? undefined
       : container(CAC, 'PaymentMeans', [

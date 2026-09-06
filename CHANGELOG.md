@@ -211,6 +211,23 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
   metni anahtara girmez, düzeltilmesi öneriyi "yeni" göstermemelidir
 - **`resolveTypeForProfile`** — `resolveProfileForType`'ın aynası; profil
   değiştiğinde uyan tipi korur, uymayanı profilin ilk tipine düşürür
+- **e-Arşiv bilgileri** (`eArchive`) — GİB bunları ayrı öğelerle değil,
+  belirli `documentTypeCode` değerleri taşıyan ek belge atıflarıyla ister;
+  kodları ezberlemek kullanıcının işi değildir:
+  - `sendType` — `EXT_SEND_METHOD`. `KAGIT` için öğe **yazılmaz**; GİB kâğıt
+    gönderimi varsayılan sayar
+  - `onlineSale` — `EXT_IS_ONLINE_SALE`, `EXT_ONLINE_STORE_URL`,
+    `EXT_PAYMENT_METHOD`, `EXT_PAYMENT_DATE`. Teslim tarihi ve taşıyıcı
+    `cac:Delivery` bloğuna gider; açıkça verilen `delivery` alanları üstün
+    gelir
+  - `sgk` — `DOSYA_NO`, `MUKELLEF_ADI`, `MUKELLEF_KODU`. Açıklamada fatura
+    türünün Türkçe adı geçer ("Eczane Adı"); yeni `SGK_TYPE_DEFINITIONS`
+    tablosundan çözülür, bilinmeyen kodda kodun kendisi kullanılır
+  - `xsltTemplate` — görüntüleme şablonu, ek belge atfına gömülü XSLT
+  - Üretilen belgeler kullanıcının `additionalDocuments` girdilerinin
+    **önüne** yazılır
+  - `eArchiveDocuments` ve `onlineSaleDelivery` ayrıca dışa aktarılır:
+    eşlemenin ne ürettiği görülebilir, elle de kullanılabilir
 - **Kod tablosu genişletme** (`CodeTables`) — gömülü GİB kod listelerinin
   önüne geçen ek tanımlar; yeni kod eklenebilir, var olan tanım
   düzeltilebilir. GİB bir kod yayımladığında paket sürümü beklemek

@@ -1174,3 +1174,137 @@ describe('özel matrah belgesi', () => {
     )
   })
 })
+
+describe('e-Arşiv bilgileri', () => {
+  const earsiv = { profile: InvoiceProfile.EARSIV, type: InvoiceType.SATIS } as const
+
+  it('gönderim şeklini ek belgeye çevirir', () => {
+    const xml = buildInvoiceXml(girdi({ ...earsiv, eArchive: { sendType: 'ELEKTRONIK' } }))
+    expect(xml).toContain(
+      '<cac:AdditionalDocumentReference><cbc:ID>ELEKTRONIK</cbc:ID><cbc:IssueDate>2026-09-06</cbc:IssueDate><cbc:DocumentTypeCode>EXT_SEND_METHOD</cbc:DocumentTypeCode></cac:AdditionalDocumentReference>',
+    )
+  })
+
+  it('kâğıt gönderimde ek belge YAZMAZ', () => {
+    // GİB kâğıt gönderimi varsayılan sayar; alanı yalnızca elektronik
+    // gönderimde bekler.
+    const xml = buildInvoiceXml(girdi({ ...earsiv, eArchive: { sendType: 'KAGIT' } }))
+    expect(xml).not.toContain('EXT_SEND_METHOD')
+  })
+
+  it('internet satışının dört ek belgesini yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        ...earsiv,
+        eArchive: {
+          onlineSale: {
+            storeUrl: 'https://magaza.test',
+            paymentMethod: 'KREDIKARTI/BANKAKARTI',
+            paymentDate: '2026-09-05',
+          },
+        },
+      }),
+    )
+    expect(xml).toContain('<cbc:DocumentTypeCode>EXT_IS_ONLINE_SALE</cbc:DocumentTypeCode>')
+    expect(xml).toContain('<cbc:ID>https://magaza.test</cbc:ID>')
+    expect(xml).toContain('<cbc:DocumentTypeCode>EXT_ONLINE_STORE_URL</cbc:DocumentTypeCode>')
+    expect(xml).toContain('<cbc:DocumentTypeCode>EXT_PAYMENT_METHOD</cbc:DocumentTypeCode>')
+    expect(xml).toContain('<cbc:DocumentTypeCode>EXT_PAYMENT_DATE</cbc:DocumentTypeCode>')
+  })
+
+  it('internet satışının teslim bilgisini Delivery bloğuna yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        ...earsiv,
+        eArchive: {
+          onlineSale: {
+            storeUrl: 'https://magaza.test',
+            paymentMethod: 'HAVALE',
+            paymentDate: '2026-09-05',
+            deliveryDate: '2026-09-07',
+            carrier: {
+              taxNumber: '5555555555',
+              name: 'Kargo A.Ş.',
+              address: { district: 'Çankaya', city: 'Ankara' },
+            },
+          },
+        },
+      }),
+    )
+    expect(xml).toContain('<cbc:ActualDeliveryDate>2026-09-07</cbc:ActualDeliveryDate>')
+    expect(xml).toContain('<cac:CarrierParty>')
+    expect(xml).toContain('<cbc:Name>Kargo A.Ş.</cbc:Name>')
+  })
+
+  it('açıkça verilen teslim bilgisi satıştan gelene üstün gelir', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        ...earsiv,
+        delivery: { actualDeliveryDate: '2026-09-10' },
+        eArchive: {
+          onlineSale: {
+            storeUrl: 'x',
+            paymentMethod: 'y',
+            paymentDate: '2026-09-05',
+            deliveryDate: '2026-09-07',
+          },
+        },
+      }),
+    )
+    expect(xml).toContain('<cbc:ActualDeliveryDate>2026-09-10</cbc:ActualDeliveryDate>')
+    expect(xml).not.toContain('2026-09-07')
+  })
+
+  it('SGK bilgisini üç ek belgeye çevirir ve türün adını kullanır', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        ...earsiv,
+        type: InvoiceType.SGK,
+        accountingCost: 'SAGLIK_ECZ',
+        eArchive: {
+          sgk: {
+            type: 'SAGLIK_ECZ',
+            documentNo: 'D-1',
+            companyName: 'Örnek Eczanesi',
+            companyCode: 'S-9',
+          },
+        },
+      }),
+    )
+    expect(xml).toContain(
+      '<cbc:DocumentTypeCode>DOSYA_NO</cbc:DocumentTypeCode><cbc:DocumentType>D-1</cbc:DocumentType><cbc:DocumentDescription>Döküm No</cbc:DocumentDescription>',
+    )
+    expect(xml).toContain('<cbc:DocumentDescription>Eczane Adı</cbc:DocumentDescription>')
+    expect(xml).toContain(
+      '<cbc:DocumentDescription>Eczane Sicil Numarası</cbc:DocumentDescription>',
+    )
+  })
+
+  it('bilinmeyen SGK türünde kodun kendisini kullanır', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        ...earsiv,
+        eArchive: { sgk: { type: 'YENITUR', documentNo: 'D', companyName: 'A', companyCode: 'K' } },
+      }),
+    )
+    expect(xml).toContain('<cbc:DocumentDescription>YENITUR Adı</cbc:DocumentDescription>')
+  })
+
+  it('görüntüleme şablonunu gömülü dosya olarak iliştirir', () => {
+    const xml = buildInvoiceXml(girdi({ ...earsiv, eArchive: { xsltTemplate: 'PHhzbDo=' } }))
+    expect(xml).toContain(
+      '<cbc:EmbeddedDocumentBinaryObject mimeCode="application/xslt+xml" filename="1a2b3c4d-0001-4000-8001-000000000001.xslt">PHhzbDo=</cbc:EmbeddedDocumentBinaryObject>',
+    )
+  })
+
+  it('e-Arşiv belgelerini kullanıcının ek belgelerinden ÖNCE yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        ...earsiv,
+        eArchive: { sendType: 'ELEKTRONIK' },
+        additionalDocuments: [{ id: 'KULLANICI-1' }],
+      }),
+    )
+    expect(xml.indexOf('EXT_SEND_METHOD')).toBeLessThan(xml.indexOf('KULLANICI-1'))
+  })
+})
