@@ -156,6 +156,18 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
     olmayan belgelerin çıktısı değişmez
   - Çarpan yüzde olarak verilir ve kesre çevrilir (10 → 0,1); satır
     iskontosundaki `discountRate` ile aynı sözleşme
+- **Çoklu para birimi, imza bilgisi ve çoğul iade atfı**:
+  - `taxCurrencyCode` / `pricingCurrencyCode` / `paymentCurrencyCode` —
+    verginin, fiyatlandırmanın ve ödemenin para birimi kodları
+  - `taxExchangeRate` / `paymentExchangeRate` — vergi ve ödeme kuru belge
+    kurundan ayrı verilebilir. GİB vergiyi belgenin düzenlendiği günün
+    kuruyla ister; bu kur fiyatlandırma kurundan farklı olabilir
+  - `signature` (`SignatureInput`) — imza kimliği, şeması, imzalayan taraf
+    ve imza dosyasının adresi. Verilmezse blok eskisi gibi satıcıdan
+    doldurulur; entegratör mührüyle imzalanan belgelerde imzalayan taraf
+    artık bildirilebiliyor
+  - `billingReferences` — bir iade faturası birden çok asıl faturaya atıf
+    yapabilir. İade zorunluluğu denetimi her iki alana birden bakar
 - **Kod tablosu genişletme** (`CodeTables`) — gömülü GİB kod listelerinin
   önüne geçen ek tanımlar; yeni kod eklenebilir, var olan tanım
   düzeltilebilir. GİB bir kod yayımladığında paket sürümü beklemek

@@ -1010,3 +1010,149 @@ describe('iskonto ve ek yük öğeleri', () => {
     expect(sira.indexOf('AllowanceCharge')).toBeLessThan(sira.indexOf('PricingExchangeRate'))
   })
 })
+
+describe('çoklu para birimi', () => {
+  it('vergi, fiyatlandırma ve ödeme para birimi kodlarını sırayla yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        currencyCode: 'USD',
+        exchangeRate: { rate: 34.25 },
+        taxCurrencyCode: 'TRY',
+        pricingCurrencyCode: 'EUR',
+        paymentCurrencyCode: 'USD',
+      }),
+    )
+    expect(xml).toContain(
+      '<cbc:DocumentCurrencyCode>USD</cbc:DocumentCurrencyCode><cbc:TaxCurrencyCode>TRY</cbc:TaxCurrencyCode><cbc:PricingCurrencyCode>EUR</cbc:PricingCurrencyCode><cbc:PaymentCurrencyCode>USD</cbc:PaymentCurrencyCode>',
+    )
+  })
+
+  it('vergi ve ödeme kurunu belge kurundan ayrı yazar', () => {
+    // GİB vergiyi belgenin düzenlendiği günün kuruyla ister; bu kur
+    // fiyatlandırma kurundan farklı olabilir.
+    const xml = buildInvoiceXml(
+      girdi({
+        currencyCode: 'USD',
+        exchangeRate: { rate: 34.25 },
+        taxExchangeRate: { rate: 34.1 },
+        paymentExchangeRate: { rate: 34.5 },
+      }),
+    )
+    expect(xml).toContain(
+      '<cac:TaxExchangeRate><cbc:SourceCurrencyCode>USD</cbc:SourceCurrencyCode><cbc:TargetCurrencyCode>TRY</cbc:TargetCurrencyCode><cbc:CalculationRate>34.100000</cbc:CalculationRate></cac:TaxExchangeRate>',
+    )
+    expect(xml).toContain('<cbc:CalculationRate>34.500000</cbc:CalculationRate>')
+  })
+
+  it('kurları UBL sırasında yazar', () => {
+    const sira = kokSirasi(
+      buildInvoiceXml(
+        girdi({
+          currencyCode: 'USD',
+          exchangeRate: { rate: 34.25 },
+          taxExchangeRate: { rate: 34.1 },
+          paymentExchangeRate: { rate: 34.5 },
+        }),
+      ),
+    )
+    expect(sira.filter((a) => a.endsWith('ExchangeRate'))).toEqual([
+      'TaxExchangeRate',
+      'PricingExchangeRate',
+      'PaymentExchangeRate',
+    ])
+  })
+})
+
+describe('imza bilgisi', () => {
+  it('bilgi verilmediğinde satıcıdan doldurur', () => {
+    expect(buildInvoiceXml(girdi())).toContain(
+      '<cac:Signature><cbc:ID schemeID="VKN_TCKN">1234567890</cbc:ID><cac:SignatoryParty><cac:PartyIdentification><cbc:ID schemeID="VKN">1234567890</cbc:ID></cac:PartyIdentification></cac:SignatoryParty></cac:Signature>',
+    )
+  })
+
+  it('imzalayan taraf verildiğinde tam taraf bloğu yazar', () => {
+    // Entegratör mührüyle imzalanan belgelerde imzalayan satıcıdan
+    // farklıdır ve adıyla birlikte bildirilir.
+    const xml = buildInvoiceXml(
+      girdi({
+        signature: {
+          id: '5555555555',
+          signatoryParty: {
+            taxNumber: '5555555555',
+            name: 'Özel Entegratör A.Ş.',
+            address: { district: 'Çankaya', city: 'Ankara' },
+          },
+        },
+      }),
+    )
+    expect(xml).toContain('<cbc:ID schemeID="VKN_TCKN">5555555555</cbc:ID>')
+    expect(xml).toContain('<cac:SignatoryParty><cac:PartyIdentification>')
+    expect(xml).toContain('<cbc:Name>Özel Entegratör A.Ş.</cbc:Name>')
+  })
+
+  it('imza dosyasının adresini yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({ signature: { digitalSignatureUri: 'https://ornek.test/imza.xml' } }),
+    )
+    expect(xml).toContain(
+      '<cac:DigitalSignatureAttachment><cac:ExternalReference><cbc:URI>https://ornek.test/imza.xml</cbc:URI></cac:ExternalReference></cac:DigitalSignatureAttachment>',
+    )
+  })
+
+  it('şema kimliği değiştirilebilir', () => {
+    const xml = buildInvoiceXml(girdi({ signature: { schemeId: 'VKN' } }))
+    expect(xml).toContain('<cbc:ID schemeID="VKN">1234567890</cbc:ID>')
+  })
+})
+
+describe('çoğul iade atfı', () => {
+  it('birden çok asıl faturaya atıf yazar', () => {
+    // Bir iade faturası birden çok asıl faturayı kapsayabilir; UBL öğeyi
+    // tekrarlı tanımlar.
+    const xml = buildInvoiceXml(
+      girdi({
+        type: InvoiceType.IADE,
+        billingReference: { id: 'ABC2025000000001', issueDate: '2025-12-01' },
+        billingReferences: [
+          { id: 'ABC2025000000002', issueDate: '2025-12-02' },
+          { id: 'ABC2025000000003', issueDate: '2025-12-03', uuid: 'u-3' },
+        ],
+      }),
+    )
+    const adet = xml.split('<cac:BillingReference>').length - 1
+    expect(adet).toBe(3)
+    // Tekil alan önce yazılır.
+    expect(xml.indexOf('ABC2025000000001')).toBeLessThan(xml.indexOf('ABC2025000000002'))
+    expect(xml).toContain('<cbc:UUID>u-3</cbc:UUID>')
+  })
+
+  it('iade tipinde belge tipi kodunu her atıfa yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        type: InvoiceType.IADE,
+        billingReferences: [
+          { id: 'ABC2025000000002', issueDate: '2025-12-02' },
+          { id: 'ABC2025000000003', issueDate: '2025-12-03' },
+        ],
+      }),
+    )
+    expect(xml.split('<cbc:DocumentTypeCode>IADE</cbc:DocumentTypeCode>').length - 1).toBe(2)
+  })
+
+  it('yalnızca çoğul alan verildiğinde zorunluluk karşılanır', () => {
+    // Kullanıcı atfı çoğul alanda vermişse atıf VARDIR; yalnızca tekil
+    // alana bakan bir denetim doğru belgeyi reddederdi.
+    expect(() =>
+      buildInvoiceXml(
+        girdi({
+          type: InvoiceType.IADE,
+          billingReferences: [{ id: 'ABC2025000000002', issueDate: '2025-12-02' }],
+        }),
+      ),
+    ).not.toThrow()
+  })
+
+  it('hiçbir atıf yokken iade faturasını reddeder', () => {
+    expect(() => buildInvoiceXml(girdi({ type: InvoiceType.IADE }))).toThrow(/billingReference/)
+  })
+})

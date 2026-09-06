@@ -169,6 +169,7 @@ export {
   type EmbeddedBinaryInput,
   type ExternalReferenceInput,
   type PaymentTermsInput,
+  type SignatureInput,
   type BillingReferenceInput,
   type ContractDocumentReferenceInput,
   type BuildDespatchOptions,

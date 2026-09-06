@@ -275,6 +275,29 @@ export interface ExchangeRateInput {
   readonly targetCurrencyCode?: string
 }
 
+/**
+ * İmza bilgisi — `cac:Signature`.
+ *
+ * Verilmezse blok satıcının vergi numarasıyla kendiliğinden doldurulur.
+ * Mali mühür sahibi satıcıdan farklıysa (entegratör ya da özel entegratör
+ * mührüyle imzalanan belgeler) imzalayan taraf burada bildirilir.
+ */
+export interface SignatureInput {
+  /** İmza kimliği — `cbc:ID`; verilmezse satıcının vergi numarası. */
+  readonly id?: string
+  /** `schemeID` özniteliği; varsayılan `VKN_TCKN`. */
+  readonly schemeId?: string
+  /** İmzalayan taraf — `cac:SignatoryParty`; verilmezse satıcı. */
+  readonly signatoryParty?: PartyInput
+  /**
+   * İmza dosyasının adresi — `cac:DigitalSignatureAttachment`.
+   *
+   * Sarmalanmış XAdES imzası `ext:UBLExtensions` içinde taşınır; bu alan
+   * imzanın belge dışında tutulduğu kurulumlar içindir.
+   */
+  readonly digitalSignatureUri?: string
+}
+
 /** Bir e-fatura belgesinin girdisi. */
 export interface InvoiceInput {
   /** 16 haneli belge numarası (3 harf + yıl + sıra). */
@@ -291,6 +314,19 @@ export interface InvoiceInput {
   readonly type: InvoiceTypeCode
   /** ISO 4217 para birimi kodu; varsayılan `TRY`. */
   readonly currencyCode?: string
+  /**
+   * Vergilerin bildirildiği para birimi — `cbc:TaxCurrencyCode`.
+   *
+   * Belge para birimi Türk lirası dışındayken vergi tutarlarının hangi
+   * para biriminde beyan edildiğini bildirir. Tutarlar bu kodla
+   * yazılmaz; kod yalnızca beyanın para birimini söyler,
+   * `taxExchangeRate` ile birlikte kullanılır.
+   */
+  readonly taxCurrencyCode?: string
+  /** Fiyatlandırma para birimi — `cbc:PricingCurrencyCode`. */
+  readonly pricingCurrencyCode?: string
+  /** Ödemenin yapılacağı para birimi — `cbc:PaymentCurrencyCode`. */
+  readonly paymentCurrencyCode?: string
   /** Satıcı. */
   readonly supplier: PartyInput
   /** Alıcı. */
@@ -306,8 +342,21 @@ export interface InvoiceInput {
   readonly lines: readonly InvoiceBuilderLineInput[]
   /** Serbest notlar. Yazıyla tutar notu bunlardan önce yazılır. */
   readonly notes?: readonly string[]
-  /** İade faturasında asıl faturaya atıf. */
+  /**
+   * İade faturasında asıl faturaya atıf.
+   *
+   * Tek atıf için bu alan yeterlidir. Bir iade birden çok faturayı
+   * kapsıyorsa {@link InvoiceInput.billingReferences} kullanılır; ikisi
+   * birlikte verilirse önce bu alan yazılır.
+   */
   readonly billingReference?: BillingReferenceInput
+  /**
+   * Ek iade atıfları — `cac:BillingReference`.
+   *
+   * UBL bu öğeyi tekrarlı tanımlar; tek bir iade faturası birden çok
+   * asıl faturaya atıf yapabilir.
+   */
+  readonly billingReferences?: readonly BillingReferenceInput[]
   /** Sipariş atfı. */
   readonly orderReference?: OrderReferenceInput
   /** Ödeme bilgisi. */
@@ -333,6 +382,8 @@ export interface InvoiceInput {
   readonly taxRepresentative?: TaxRepresentativeInput
   /** Sözleşme atfı. */
   readonly contractDocument?: ContractDocumentReferenceInput
+  /** İmza bilgisi; verilmezse satıcıdan doldurulur. */
+  readonly signature?: SignatureInput
   /** Genel belge atıfları; sırayla yazılır. */
   readonly additionalDocuments?: readonly AdditionalDocumentReferenceInput[]
   /**
@@ -372,6 +423,16 @@ export interface InvoiceInput {
    * Belge para birimi Türk lirası dışındaysa GİB kuru zorunlu tutar.
    */
   readonly exchangeRate?: ExchangeRateInput
+  /**
+   * Vergi kuru — `cac:TaxExchangeRate`.
+   *
+   * Vergi tutarlarının Türk lirası karşılığında kullanılan kur; belge
+   * kurundan (`exchangeRate`) farklı olabilir, çünkü GİB vergiyi
+   * belgenin düzenlendiği günün kuruyla ister.
+   */
+  readonly taxExchangeRate?: ExchangeRateInput
+  /** Ödeme kuru — `cac:PaymentExchangeRate`. */
+  readonly paymentExchangeRate?: ExchangeRateInput
 }
 
 /** {@link buildInvoice} seçenekleri. */
@@ -466,6 +527,67 @@ const amountLeaf = (
 ): XmlElement =>
   leaf(CBC, name, toStringValue(value, currencyDefinition(currencyCode, tables).minorUnits), [
     { name: 'currencyID', value: currencyCode },
+  ])
+
+/**
+ * İmza bloğunu üretir — `cac:Signature`.
+ *
+ * Bilgi verilmediğinde blok satıcının vergi numarasıyla doldurulur;
+ * imzalayan taraf yalnızca `cac:PartyIdentification` taşır. İmzalayan
+ * açıkça verildiğinde tam taraf bloğu yazılır.
+ */
+const buildSignature = (
+  signature: SignatureInput | undefined,
+  supplier: PartyInput,
+): XmlElement => {
+  const id = signature?.id ?? supplier.taxNumber
+  const imzalayan = signature?.signatoryParty
+  return container(CAC, 'Signature', [
+    leaf(CBC, 'ID', id, [{ name: 'schemeID', value: signature?.schemeId ?? 'VKN_TCKN' }]),
+    imzalayan === undefined
+      ? container(CAC, 'SignatoryParty', [
+          container(CAC, 'PartyIdentification', [
+            leaf(CBC, 'ID', supplier.taxNumber, [
+              { name: 'schemeID', value: supplier.taxNumber.length === 11 ? 'TCKN' : 'VKN' },
+            ]),
+          ]),
+        ])
+      : buildParty(imzalayan, 'SignatoryParty'),
+    signature?.digitalSignatureUri === undefined
+      ? undefined
+      : container(CAC, 'DigitalSignatureAttachment', [
+          container(CAC, 'ExternalReference', [leaf(CBC, 'URI', signature.digitalSignatureUri)]),
+        ]),
+  ])
+}
+
+/** Bir kur bilgisini verilen adla `cac:` öğesine çevirir. */
+const buildExchangeRate = (
+  name: string,
+  rate: ExchangeRateInput,
+  currencyCode: string,
+): XmlElement =>
+  container(CAC, name, [
+    leaf(CBC, 'SourceCurrencyCode', rate.sourceCurrencyCode ?? currencyCode),
+    leaf(CBC, 'TargetCurrencyCode', rate.targetCurrencyCode ?? DEFAULT_CURRENCY_CODE),
+    // Kur altı basamakla yazılır: TL karşılığı hesabında kuruş farkı
+    // yaratmaması için ondalık hassasiyeti korunur.
+    leaf(CBC, 'CalculationRate', toStringValue(asDecimal(rate.rate), 6)),
+  ])
+
+/** Bir iade atfını `cac:BillingReference` öğesine çevirir. */
+const buildBillingReference = (ref: BillingReferenceInput, type: InvoiceTypeCode): XmlElement =>
+  container(CAC, 'BillingReference', [
+    container(CAC, 'InvoiceDocumentReference', [
+      leaf(CBC, 'ID', ref.id),
+      leaf(CBC, 'IssueDate', ref.issueDate),
+      optionalLeaf(CBC, 'UUID', ref.uuid),
+      optionalLeaf(
+        CBC,
+        'DocumentTypeCode',
+        ref.documentTypeCode ?? (RETURN_TYPES.includes(type) ? type : undefined),
+      ),
+    ]),
   ])
 
 /** Bir iskonto ya da ek yükü `cac:AllowanceCharge` öğesine çevirir. */
@@ -720,7 +842,14 @@ export const buildInvoice = (
 
   const notlar = [...(yazyla === undefined ? [] : [yazyla]), ...(input.notes ?? [])]
 
-  if (RETURN_TYPES.includes(input.type) && input.billingReference === undefined) {
+  // Zorunluluk her iki alana birden bakar: kullanıcı atfı çoğul alanda
+  // vermişse atıf VARDIR. Yalnızca tekil alana bakmak, doğru belgeyi
+  // reddederdi.
+  const iadeAtiflari = [
+    ...(input.billingReference === undefined ? [] : [input.billingReference]),
+    ...(input.billingReferences ?? []),
+  ]
+  if (RETURN_TYPES.includes(input.type) && iadeAtiflari.length === 0) {
     throw new DocumentInputError(
       'MISSING_BILLING_REFERENCE',
       'billingReference',
@@ -745,6 +874,9 @@ export const buildInvoice = (
     leaf(CBC, 'InvoiceTypeCode', input.type),
     ...notlar.map((note) => leaf(CBC, 'Note', note)),
     leaf(CBC, 'DocumentCurrencyCode', currencyCode),
+    optionalLeaf(CBC, 'TaxCurrencyCode', input.taxCurrencyCode),
+    optionalLeaf(CBC, 'PricingCurrencyCode', input.pricingCurrencyCode),
+    optionalLeaf(CBC, 'PaymentCurrencyCode', input.paymentCurrencyCode),
     optionalLeaf(CBC, 'AccountingCost', input.accountingCost),
     leaf(CBC, 'LineCountNumeric', String(totals.lines.length)),
     input.invoicePeriod === undefined
@@ -761,21 +893,7 @@ export const buildInvoice = (
           leaf(CBC, 'ID', input.orderReference.id),
           optionalLeaf(CBC, 'IssueDate', input.orderReference.issueDate),
         ]),
-    input.billingReference === undefined
-      ? undefined
-      : container(CAC, 'BillingReference', [
-          container(CAC, 'InvoiceDocumentReference', [
-            leaf(CBC, 'ID', input.billingReference.id),
-            leaf(CBC, 'IssueDate', input.billingReference.issueDate),
-            optionalLeaf(CBC, 'UUID', input.billingReference.uuid),
-            optionalLeaf(
-              CBC,
-              'DocumentTypeCode',
-              input.billingReference.documentTypeCode ??
-                (RETURN_TYPES.includes(input.type) ? input.type : undefined),
-            ),
-          ]),
-        ]),
+    ...iadeAtiflari.map((ref) => buildBillingReference(ref, input.type)),
     ...(input.despatchDocumentReferences ?? []).map((belge) =>
       buildDocumentReference('DespatchDocumentReference', belge),
     ),
@@ -802,19 +920,7 @@ export const buildInvoice = (
       buildDocumentReference('AdditionalDocumentReference', belge),
     ),
     (options.includeSignature ?? true)
-      ? container(CAC, 'Signature', [
-          leaf(CBC, 'ID', input.supplier.taxNumber, [{ name: 'schemeID', value: 'VKN_TCKN' }]),
-          container(CAC, 'SignatoryParty', [
-            container(CAC, 'PartyIdentification', [
-              leaf(CBC, 'ID', input.supplier.taxNumber, [
-                {
-                  name: 'schemeID',
-                  value: input.supplier.taxNumber.length === 11 ? 'TCKN' : 'VKN',
-                },
-              ]),
-            ]),
-          ]),
-        ])
+      ? buildSignature(input.signature, input.supplier)
       : undefined,
     container(CAC, 'AccountingSupplierParty', [buildParty(input.supplier)]),
     container(CAC, 'AccountingCustomerParty', [buildParty(input.customer)]),
@@ -856,28 +962,15 @@ export const buildInvoice = (
     ...(input.allowanceCharges ?? []).map((kalem) =>
       buildAllowanceCharge(kalem, currencyCode, tables),
     ),
+    input.taxExchangeRate === undefined
+      ? undefined
+      : buildExchangeRate('TaxExchangeRate', input.taxExchangeRate, currencyCode),
     input.exchangeRate === undefined
       ? undefined
-      : container(CAC, 'PricingExchangeRate', [
-          leaf(CBC, 'SourceCurrencyCode', input.exchangeRate.sourceCurrencyCode ?? currencyCode),
-          leaf(
-            CBC,
-            'TargetCurrencyCode',
-            input.exchangeRate.targetCurrencyCode ?? DEFAULT_CURRENCY_CODE,
-          ),
-          // Kur altı basamakla yazılır: TL karşılığı hesabında kuruş
-          // farkı yaratmaması için ondalık hassasiyeti korunur.
-          leaf(
-            CBC,
-            'CalculationRate',
-            toStringValue(
-              typeof input.exchangeRate.rate === 'object'
-                ? input.exchangeRate.rate
-                : decimal(input.exchangeRate.rate),
-              6,
-            ),
-          ),
-        ]),
+      : buildExchangeRate('PricingExchangeRate', input.exchangeRate, currencyCode),
+    input.paymentExchangeRate === undefined
+      ? undefined
+      : buildExchangeRate('PaymentExchangeRate', input.paymentExchangeRate, currencyCode),
     container(CAC, 'TaxTotal', [
       // Kök vergi toplamı alt toplamların MUTLAK toplamıdır: stopaj burada
       // pozitif görünür, ödenecek tutar hesabında ise eksi girer.

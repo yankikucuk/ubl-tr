@@ -89,6 +89,43 @@ const DOCUMENT_REFERENCE_CHILDREN: readonly ChildRule[] = [
   a0('Attachment'),
 ]
 
+/**
+ * `cac:ExchangeRate` tipinin çocuk sırası.
+ *
+ * Fiyatlandırma, vergi ve ödeme kurlarının hepsi UBL'de bu tiptedir.
+ */
+const EXCHANGE_RATE_CHILDREN: readonly ChildRule[] = [
+  b('SourceCurrencyCode'),
+  b0('SourceCurrencyBaseRate'),
+  b('TargetCurrencyCode'),
+  b0('TargetCurrencyBaseRate'),
+  b0('ExchangeMarketID'),
+  b0('CalculationRate'),
+  b0('MathematicOperatorCode'),
+  b0('Date'),
+  a0('ForeignExchangeContract'),
+]
+
+/** `cac:Party` tipinin çocuk sırası; imzalayan taraf da bu tiptedir. */
+const PARTY_CHILDREN: readonly ChildRule[] = [
+  b0('MarkCareIndicator'),
+  b0('MarkAttentionIndicator'),
+  b0('WebsiteURI'),
+  b0('LogoReferenceID'),
+  b0('EndpointID'),
+  b0('IndustryClassificationCode'),
+  an('PartyIdentification'),
+  an('PartyName'),
+  b0('Language'),
+  a0('PostalAddress'),
+  a0('PhysicalLocation'),
+  an('PartyTaxScheme'),
+  an('PartyLegalEntity'),
+  a0('Contact'),
+  a0('Person'),
+  a0('AgentParty'),
+]
+
 export const STRUCTURE_MODELS: readonly ElementModel[] = [
   {
     namespace: 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
@@ -177,24 +214,7 @@ export const STRUCTURE_MODELS: readonly ElementModel[] = [
   {
     namespace: CAC,
     name: 'Party',
-    children: [
-      b0('MarkCareIndicator'),
-      b0('MarkAttentionIndicator'),
-      b0('WebsiteURI'),
-      b0('LogoReferenceID'),
-      b0('EndpointID'),
-      b0('IndustryClassificationCode'),
-      an('PartyIdentification'),
-      an('PartyName'),
-      b0('Language'),
-      a0('PostalAddress'),
-      a0('PhysicalLocation'),
-      an('PartyTaxScheme'),
-      an('PartyLegalEntity'),
-      a0('Contact'),
-      a0('Person'),
-      a0('AgentParty'),
-    ],
+    children: PARTY_CHILDREN,
   },
   {
     namespace: CAC,
@@ -681,17 +701,27 @@ export const STRUCTURE_MODELS: readonly ElementModel[] = [
   {
     namespace: CAC,
     name: 'PricingExchangeRate',
-    children: [
-      b('SourceCurrencyCode'),
-      b0('SourceCurrencyBaseRate'),
-      b('TargetCurrencyCode'),
-      b0('TargetCurrencyBaseRate'),
-      b0('ExchangeMarketID'),
-      b0('CalculationRate'),
-      b0('MathematicOperatorCode'),
-      b0('Date'),
-      a0('ForeignExchangeContract'),
-    ],
+    children: EXCHANGE_RATE_CHILDREN,
+  },
+  {
+    namespace: CAC,
+    name: 'TaxExchangeRate',
+    children: EXCHANGE_RATE_CHILDREN,
+  },
+  {
+    namespace: CAC,
+    name: 'PaymentExchangeRate',
+    children: EXCHANGE_RATE_CHILDREN,
+  },
+  {
+    namespace: CAC,
+    name: 'SignatoryParty',
+    children: PARTY_CHILDREN,
+  },
+  {
+    namespace: CAC,
+    name: 'DigitalSignatureAttachment',
+    children: [b0('EmbeddedDocumentBinaryObject'), a0('ExternalReference')],
   },
   {
     namespace: CAC,
