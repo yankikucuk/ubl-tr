@@ -109,6 +109,28 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
     `YTB_TYPES` tip grupları
   - `session` katmanı üç kardeşi birden kullanan tek katmandır; ESLint
     kuralı hiçbir alt katmanın ona bağımlı olmasına izin vermez
+  - Mükellefiyet durumu (`CustomerLiability`) — alıcı e-Fatura mükellefi
+    mi, e-Arşiv mi; profil ve tip listeleri buna göre daralır
+    (`filterProfilesByLiability`, `filterTypesByLiability`). Kütüphane
+    mükellef listesini sorgulamaz; sonucu çağıran verir, verilmezse
+    süzme yapılmaz
+  - `resolveProfileForType` — tip değişince profil hâlâ geçerliyse korunur,
+    değilse mükellefiyete uygun bir profil önerilir; iade temel faturaya
+    düşer (Schematron kuralı)
+  - `clear` / `clearLine` — alan kaldırma; `patch` derin birleştirme yapar
+    ve `undefined` "dokunma" demektir, silme ayrı bir çağrıdır. Kabul
+    edilen anahtarlar girdi tipinden türer, elle tutulmaz
+  - `removeIdentification` / `setIdentifications` — kimlik listesi
+    yardımcıları; liste boşalınca alan tümden kaldırılır (`schemeID`
+    taşımayan boş `cac:PartyIdentification` Schematron'u ihlal eder)
+- **`DocumentInputError`** — kurucuların reddettiği girdi için `code` ve
+  `path` taşıyan hata. `RangeError`'dan türer; mevcut `instanceof`
+  denetimleri bozulmaz. Oturum bu iki alanı doğrudan doğrulama bulgusuna
+  taşır, böylece belge hiç kurulamadığında bile geri bildirim alan
+  düzeyinde kalır (`lines[1].withholdingCode`, `billingReference` …).
+  Kod ve yol birlikte verildiği yerler: profil-tip uyuşmazlığı, eksik iade
+  atfı, satırsız belge, bilinmeyen vergi türü ve tevkifat kodu, iskonto
+  oranı ile tutarının birlikte verilmesi
 
 ### Neden bu tasarım
 

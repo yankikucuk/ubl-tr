@@ -109,3 +109,51 @@ export class InvalidDocumentNumberError extends UblTrError {
     )
   }
 }
+
+/**
+ * Belge girdisi belgeye dönüştürülemiyor.
+ *
+ * `RangeError`'dan türer: girdi, kabul edilen değer aralığının dışındadır
+ * ve üreticiler bu sözleşmeyi baştan beri taşır — `instanceof RangeError`
+ * yakalayan mevcut kod çalışmaya devam eder. Üzerine iki alan ekler:
+ *
+ * - `code` — sürümler arası **kararlı** makine kodu; kararlar buna bakar
+ * - `path` — hatanın hangi girdi alanından geldiği (`'billingReference'`,
+ *   `'lines[2].withholdingCode'`)
+ *
+ * `path` olmadan bir form arayüzü hatayı yalnızca gösterebilir; `path` ile
+ * hatalı alanı işaretleyebilir. `InvoiceSession` bu iki alanı doğrudan
+ * doğrulama bulgusuna taşır, böylece üretim aşamasında reddedilen bir
+ * belge de alan düzeyinde geri bildirim verir.
+ *
+ * Mesaj metni insan içindir ve sürümler arasında değişebilir.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   buildInvoiceXml(girdi)
+ * } catch (hata) {
+ *   if (hata instanceof DocumentInputError) {
+ *     alaniIsaretle(hata.path) // 'billingReference'
+ *     if (hata.code === 'MISSING_BILLING_REFERENCE') iadeAtfiAlaniniAc()
+ *   }
+ * }
+ * ```
+ */
+export class DocumentInputError extends RangeError {
+  /**
+   * @param code - Sürümler arası kararlı makine kodu
+   * @param path - Hatanın geldiği girdi alanı yolu
+   * @param message - İnsan için açıklama; sürümler arası kararlı değildir
+   */
+  constructor(
+    /** Sürümler arası kararlı makine kodu. */
+    public readonly code: string,
+    /** Hatanın geldiği girdi alanı yolu. */
+    public readonly path: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'DocumentInputError'
+  }
+}

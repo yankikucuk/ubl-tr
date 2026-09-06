@@ -4,6 +4,8 @@ import {
   type BuildInvoiceOptions,
   type InvoiceBuilderLineInput,
   type InvoiceInput,
+  type PartyIdentificationInput,
+  type PartyInput,
 } from '../builders/index.js'
 import type {
   ExemptionDefinition,
@@ -12,7 +14,7 @@ import type {
   WithholdingDefinition,
 } from '../constants/index.js'
 import type { XmlElement } from '../core/index.js'
-import type { CalculatedInvoice } from '../documents/index.js'
+import { type CalculatedInvoice, DocumentInputError } from '../documents/index.js'
 import {
   validateInvoiceRules,
   validateStructure,
@@ -24,6 +26,7 @@ import {
   allowedTypesForProfile,
   availableExemptions,
   availableWithholdings,
+  type CustomerLiability,
   deriveFieldVisibility,
   deriveLineFieldVisibility,
   type FieldVisibility,
@@ -39,6 +42,27 @@ export type DeepPartial<T> = {
       ? DeepPartial<NonNullable<T[K]>> | undefined
       : T[K]
 }
+
+/**
+ * Bir tipin isteğe bağlı alan adları.
+ *
+ * `clear` yalnızca isteğe bağlı alanları kabul eder; zorunlu bir alanı
+ * silmek belgeyi kurulamaz hâle getirir. Liste elle tutulmaz, tipten
+ * türer — girdiye yeni bir isteğe bağlı alan eklendiğinde `clear` onu
+ * kendiliğinden kabul eder.
+ */
+type OptionalKeys<T> = {
+  [K in keyof T]-?: object extends Pick<T, K> ? K : never
+}[keyof T]
+
+/** {@link InvoiceSession.clear} ile temizlenebilen belge alanları. */
+export type ClearableField = OptionalKeys<InvoiceInput>
+
+/** {@link InvoiceSession.clearLine} ile temizlenebilen satır alanları. */
+export type ClearableLineField = OptionalKeys<InvoiceBuilderLineInput>
+
+/** Kimlik listesi taşıyabilen taraflar. */
+export type IdentificationParty = 'supplier' | 'customer' | 'buyerCustomer'
 
 /** Oturumun o anki türetilmiş durumu. */
 export interface SessionState {
@@ -63,6 +87,13 @@ export interface SessionState {
   /** Mevcut tipte kullanılabilen tevkifat kodları. */
   readonly availableWithholdings: readonly WithholdingDefinition[]
   /**
+   * Oturumun mükellefiyet varsayımı; verilmemişse `undefined`.
+   *
+   * `undefined` iken profil ve tip listeleri süzülmez — kütüphane alıcının
+   * mükellef olup olmadığını **tahmin etmez**.
+   */
+  readonly liability?: CustomerLiability | undefined
+  /**
    * Doğrulama bulguları.
    *
    * Girdiden değil, **üretilen belgeden** çıkarılır: yapısal doğrulama ve
@@ -83,10 +114,37 @@ export interface InvoiceSessionOptions {
   readonly build?: BuildInvoiceOptions
   /** Kullanılacak öneri kuralları; varsayılan yerleşik kümedir. */
   readonly suggestionRules?: readonly SuggestionRule[]
+  /**
+   * Alıcının mükellefiyet durumu; verilirse profil ve tip listeleri daralır.
+   *
+   * Bu bilgi GİB'in e-Fatura mükellef listesinden gelir. Kütüphane listeyi
+   * sorgulamaz — sonucu siz verirsiniz. Bkz. {@link CustomerLiability}.
+   */
+  readonly liability?: CustomerLiability
+  /**
+   * İhracat oturumu mu.
+   *
+   * `liability: 'einvoice'` ile birlikte `IHRACAT` profilinin listede
+   * kalmasını sağlar; ihracat faturası e-Fatura mükellefine düzenlenir.
+   */
+  readonly isExport?: boolean
 }
 
 /** Durum değiştiğinde çağrılan dinleyici. */
 export type SessionListener = (state: SessionState) => void
+
+/**
+ * Bir nesneden verilen anahtarları çıkarır.
+ *
+ * Anahtarların hiçbiri nesnede yoksa `undefined` döner; çağıran bunu
+ * "değişiklik yok" olarak okur ve dinleyicileri boşuna uyandırmaz.
+ */
+const omit = <T extends object>(kaynak: T, anahtarlar: readonly PropertyKey[]): T | undefined => {
+  const kume = new Set<PropertyKey>(anahtarlar)
+  const girdiler = Object.entries(kaynak).filter(([anahtar]) => !kume.has(anahtar))
+  if (girdiler.length === Object.keys(kaynak).length) return undefined
+  return Object.fromEntries(girdiler) as T
+}
 
 /** İki nesneyi derin birleştirir; `undefined` değerler yok sayılır. */
 const merge = <T>(hedef: T, yama: DeepPartial<T> | undefined): T => {
@@ -214,6 +272,138 @@ export class InvoiceSession {
   }
 
   /**
+   * Belge düzeyinde bir ya da daha çok alanı temizler.
+   *
+   * {@link InvoiceSession.patch} `undefined` değerleri **yok sayar** —
+   * derin birleştirmede `undefined`, "bu alana dokunma" demektir; olmayan
+   * bir alanı yamayla silmek mümkün değildir. Alanı gerçekten kaldırmak
+   * bu işin ayrı bir çağrısıdır.
+   *
+   * Zorunlu alanlar (`id`, `uuid`, `issueDate`, `profile`, `type`, taraflar,
+   * `lines`) tip düzeyinde kabul edilmez; onları temizlemek belgeyi
+   * kurulamaz hâle getirir, silmek değil değiştirmek gerekir.
+   *
+   * @param keys - Temizlenecek isteğe bağlı alan adları
+   * @returns Yeni durum
+   *
+   * @example Tip değişince anlamsızlaşan alanı kaldırmak
+   * ```ts
+   * oturum.patch({ type: InvoiceType.SATIS })
+   * oturum.clear('billingReference')   // iade atfı artık anlamsız
+   * ```
+   *
+   * @example Birden çok alanı birlikte
+   * ```ts
+   * oturum.clear('paymentMeans', 'orderReference', 'invoicePeriod')
+   * ```
+   */
+  clear(...keys: readonly ClearableField[]): SessionState {
+    const sonraki = omit(this.#input, keys)
+    if (sonraki === undefined) return this.#state
+    this.#input = sonraki
+    return this.#update()
+  }
+
+  /**
+   * Bir satırda bir ya da daha çok alanı temizler.
+   *
+   * {@link InvoiceSession.clear} ile aynı gerekçe: `setLine` de derin
+   * birleştirme yapar ve `undefined` yamayı yok sayar.
+   *
+   * @param index - Sıfır tabanlı satır sırası
+   * @param keys - Temizlenecek isteğe bağlı satır alanları
+   * @returns Yeni durum
+   * @throws {RangeError} Sıra geçerli değilse
+   *
+   * @example KDV oranı sıfırdan çıkınca muafiyet kodunu kaldırmak
+   * ```ts
+   * oturum.setLine(0, { vatRate: 20 })
+   * oturum.clearLine(0, 'exemptionCode', 'exemptionReason')
+   * ```
+   */
+  clearLine(index: number, ...keys: readonly ClearableLineField[]): SessionState {
+    const mevcut = this.#input.lines[index]
+    if (mevcut === undefined) {
+      throw new RangeError(
+        `Satır ${String(index)} yok; belgede ${String(this.#input.lines.length)} satır var.`,
+      )
+    }
+    const kalem = omit(mevcut, keys)
+    if (kalem === undefined) return this.#state
+    const satirlar = [...this.#input.lines]
+    satirlar[index] = kalem
+    this.#input = { ...this.#input, lines: satirlar }
+    return this.#update()
+  }
+
+  /**
+   * Bir tarafın kimlik listesinden bir kaydı siler.
+   *
+   * Sonraki sıralar kayar; liste boşalırsa alan tümden kaldırılır. Sıra
+   * geçerli değilse bir şey olmaz — form akışında silme düğmesine iki kez
+   * basılması hata değil, yinelenen bir istektir.
+   *
+   * @param party - Kimliği taşıyan taraf
+   * @param index - Sıfır tabanlı kimlik sırası
+   * @returns Yeni durum
+   *
+   * @example
+   * ```ts
+   * oturum.removeIdentification('customer', 0)
+   * ```
+   */
+  removeIdentification(party: IdentificationParty, index: number): SessionState {
+    const taraf = this.#input[party]
+    const liste = taraf?.identifications
+    if (taraf === undefined || liste === undefined || index < 0 || index >= liste.length)
+      return this.#state
+    const kalan = liste.filter((_, i) => i !== index)
+    return this.#setIdentifications(party, taraf, kalan)
+  }
+
+  /**
+   * Bir tarafın kimlik listesini tümüyle değiştirir.
+   *
+   * Boş liste verilirse alan kaldırılır. Bunun sebebi Schematron'dur:
+   * `schemeID` taşımayan boş bir `cac:PartyIdentification` öğesi belgeyi
+   * geçersiz kılar; yazmamak doğru davranıştır.
+   *
+   * @param party - Kimliği taşıyan taraf
+   * @param identifications - Yeni kimlik listesi
+   * @returns Yeni durum
+   * @throws {RangeError} Taraf girdide yoksa
+   *
+   * @example
+   * ```ts
+   * oturum.setIdentifications('customer', [{ schemeId: 'MUSTERINO', value: 'M-42' }])
+   * ```
+   */
+  setIdentifications(
+    party: IdentificationParty,
+    identifications: readonly PartyIdentificationInput[],
+  ): SessionState {
+    const taraf = this.#input[party]
+    if (taraf === undefined) {
+      throw new RangeError(`"${party}" tarafı girdide yok; önce tarafı ekleyin.`)
+    }
+    return this.#setIdentifications(party, taraf, identifications)
+  }
+
+  /** Kimlik listesini yazar; boş liste alanı kaldırır. */
+  #setIdentifications(
+    party: IdentificationParty,
+    taraf: PartyInput,
+    identifications: readonly PartyIdentificationInput[],
+  ): SessionState {
+    const yeni =
+      identifications.length === 0
+        ? (omit(taraf, ['identifications']) ?? taraf)
+        : { ...taraf, identifications }
+    this.#input = { ...this.#input, [party]: yeni }
+    return this.#update()
+  }
+
+  /**
    * Satır ekler.
    *
    * @param line - Eklenecek satır
@@ -337,6 +527,7 @@ export class InvoiceSession {
   /** Girdiden türetilmiş durumu hesaplar. */
   #derive(): SessionState {
     const input = this.#input
+    const liability = this.#options.liability
     // `profile` ve `type` girdide zorunludur; yalnızca para birimi
     // isteğe bağlıdır ve verilmediğinde varsayılan Türk lirasıdır.
     const baglam = {
@@ -356,13 +547,18 @@ export class InvoiceSession {
       totals = hesap
       issues = [...validateStructure(root).issues, ...validateInvoiceRules(root).issues]
     } catch (error) {
+      // Üretim reddedildiğinde de alan düzeyinde geri bildirim verilir:
+      // DocumentInputError hangi girdi alanından geldiğini taşır, form o
+      // alanı işaretleyebilir. Yalnızca beklenmeyen hatalar 'input'a düşer.
       issues = [
-        {
-          code: 'BUILD_FAILED',
-          path: 'input',
-          severity: 'error',
-          message: error instanceof Error ? error.message : String(error),
-        },
+        error instanceof DocumentInputError
+          ? { code: error.code, path: error.path, severity: 'error', message: error.message }
+          : {
+              code: 'BUILD_FAILED',
+              path: 'input',
+              severity: 'error',
+              message: error instanceof Error ? error.message : String(error),
+            },
       ]
     }
 
@@ -371,8 +567,13 @@ export class InvoiceSession {
       totals,
       fields,
       lineFields,
-      allowedProfiles: allowedProfilesForType(input.type),
-      allowedTypes: allowedTypesForProfile(input.profile),
+      allowedProfiles: allowedProfilesForType(
+        input.type,
+        liability,
+        this.#options.isExport ?? false,
+      ),
+      allowedTypes: allowedTypesForProfile(input.profile, liability),
+      liability,
       availableExemptions: availableExemptions(input.type),
       availableWithholdings: availableWithholdings(input.type),
       issues,

@@ -18,7 +18,11 @@ import {
   toStringValueRange,
   type XmlElement,
 } from '../core/index.js'
-import type { AdditionalItemIdentificationInput, NumericInput } from '../documents/index.js'
+import {
+  DocumentInputError,
+  type AdditionalItemIdentificationInput,
+  type NumericInput,
+} from '../documents/index.js'
 
 import { buildParty, buildPostalAddress, type AddressInput, type PartyInput } from './party.js'
 
@@ -279,7 +283,7 @@ export const buildDespatchAdvice = (
   options: BuildDespatchOptions = {},
 ): { readonly root: XmlElement } => {
   if (input.lines.length === 0) {
-    throw new RangeError('İrsaliye en az bir satır içermelidir.')
+    throw new DocumentInputError('NO_LINES', 'lines', 'İrsaliye en az bir satır içermelidir.')
   }
 
   const root = container(DESPATCH_NS, 'DespatchAdvice', [

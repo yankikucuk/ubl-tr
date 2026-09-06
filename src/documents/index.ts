@@ -6,7 +6,11 @@ export {
   type AmountInWordsNoteOptions,
   type AmountInWordsOptions,
 } from './amount/amount-in-words.js'
-export { InvalidDocumentNumberError, InvalidTaxIdentifierError } from './errors.js'
+export {
+  DocumentInputError,
+  InvalidDocumentNumberError,
+  InvalidTaxIdentifierError,
+} from './errors.js'
 export {
   calculateInvoice,
   calculateLine,

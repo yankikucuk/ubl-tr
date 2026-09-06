@@ -242,6 +242,46 @@ kayıtlı 702'de GTİP ve alıcı satır kodu, şarj faturasında dönem-plaka-E
 raporu, yatırım teşvikte harcama tipi ile marka-model. Kendi kuralınızı
 `suggest(input, [...SUGGESTION_RULES, kendiKuralim])` ile ekleyebilirsiniz.
 
+**Mükellefiyet durumu** listeleri daraltır. Türkiye'de fatura düzenlemenin
+ilk kararı budur: alıcı GİB'in e-Fatura mükellef listesinde ise e-Fatura,
+değilse e-Arşiv Fatura düzenlenir; yanlış tarafı seçmek belgeyi geçersiz
+kılar.
+
+```ts
+new InvoiceSession(girdi, { liability: 'earchive' }).state.allowedProfiles
+// ['EARSIVFATURA']  — e-Fatura profilleri listeden düşer
+
+// Tip değişince profil hâlâ geçerli mi?
+resolveProfileForType(InvoiceProfile.TICARI, InvoiceType.IADE) // 'TEMELFATURA'
+```
+
+Kütüphane mükellef listesini **sorgulamaz** — ağ isteği yapmaz. Sonucu siz
+verirsiniz; `liability` verilmezse hiçbir şey süzülmez, çünkü kütüphane
+alıcının mükellef olup olmadığını tahmin etmez.
+
+**Alan temizleme ayrı bir çağrıdır.** `patch()` derin birleştirme yapar ve
+`undefined` "bu alana dokunma" demektir; bir alanı gerçekten kaldırmak için
+`clear()` vardır. Kabul ettiği anahtarlar girdi tipinden türer — elle
+tutulan bir liste yoktur.
+
+```ts
+oturum.patch({ type: InvoiceType.SATIS })
+oturum.clear('billingReference') // iade atfı artık anlamsız
+oturum.clearLine(0, 'exemptionCode') // satır düzeyinde
+```
+
+**Üretim reddedilse bile geri bildirim alan düzeyindedir.** Doğrulama
+üretilen belge üzerinde yapıldığı için, belge hiç kurulamadığında geri
+bildirimin de kaybolması beklenirdi. Kurucular bunun için `code` ve `path`
+taşıyan `DocumentInputError` fırlatır (`RangeError`'dan türer, mevcut
+`instanceof` denetimleri bozulmaz); oturum bu iki alanı doğrudan bulguya
+taşır:
+
+```ts
+oturum.state.issues
+// [{ code: 'UNKNOWN_WITHHOLDING_CODE', path: 'lines[1].withholdingCode', … }]
+```
+
 ### Vergi kimliği doğrulama
 
 VKN ve TCKN'nin **kontrol basamaklarını** doğrular. İncelediğimiz üç UBL-TR

@@ -16,6 +16,9 @@ import {
   availableWithholdings,
   deriveFieldVisibility,
   deriveLineFieldVisibility,
+  filterProfilesByLiability,
+  filterTypesByLiability,
+  resolveProfileForType,
 } from '../src/session/field-visibility.js'
 import { InvoiceSession } from '../src/session/invoice-session.js'
 import { suggest, SUGGESTION_RULES } from '../src/session/suggestion.js'
@@ -474,8 +477,31 @@ describe('oturum', () => {
   it('kurulamayan belgeyi bulguya çevirir, çökmez', () => {
     const o = new InvoiceSession(girdi({ lines: [] }))
     expect(o.state.valid).toBe(false)
-    expect(o.state.issues[0]?.code).toBe('BUILD_FAILED')
+    expect(o.state.issues[0]?.code).toBe('NO_LINES')
+    expect(o.state.issues[0]?.path).toBe('lines')
     expect(o.state.totals).toBeUndefined()
+  })
+
+  it('kalem hatasını satır yoluyla birlikte verir', () => {
+    const o = new InvoiceSession(
+      girdi({
+        lines: [
+          { name: 'a', quantity: 1, unitPrice: 100, vatRate: 20 },
+          { name: 'b', quantity: 1, unitPrice: 100, vatRate: 20, withholdingCode: '999' },
+        ],
+      }),
+    )
+    expect(o.state.issues[0]?.code).toBe('UNKNOWN_WITHHOLDING_CODE')
+    expect(o.state.issues[0]?.path).toBe('lines[1].withholdingCode')
+  })
+
+  it('beklenmeyen hata BUILD_FAILED olarak kalır', () => {
+    // Alan yolu bilinmeyen hatalar uydurulmuş bir yola bağlanmaz.
+    const o = new InvoiceSession(
+      girdi({ lines: [{ name: 'x', quantity: 1, unitPrice: 'yüz lira', vatRate: 20 }] }),
+    )
+    expect(o.state.issues[0]?.code).toBe('BUILD_FAILED')
+    expect(o.state.issues[0]?.path).toBe('input')
   })
 
   it('XML üretir', () => {
@@ -491,5 +517,209 @@ describe('oturum', () => {
     o.patch({ type: InvoiceType.TEVKIFAT })
     expect(o.state.fields.withholdingCode).toBe(true)
     expect(o.state.availableWithholdings).toHaveLength(52)
+  })
+})
+
+describe('mükellefiyet durumu', () => {
+  it('e-Arşiv mükellefinde yalnızca e-Arşiv profili kalır', () => {
+    // Alıcı GİB mükellef listesinde değilse e-Fatura düzenlenemez.
+    const p = allowedProfilesForType(InvoiceType.SATIS, 'earchive')
+    expect(p).toEqual([InvoiceProfile.EARSIV])
+  })
+
+  it('e-Fatura mükellefinde e-Arşiv profili düşer', () => {
+    const p = allowedProfilesForType(InvoiceType.SATIS, 'einvoice')
+    expect(p).not.toContain(InvoiceProfile.EARSIV)
+    expect(p).toContain(InvoiceProfile.TEMEL)
+  })
+
+  it('ihracat profili yalnızca ihracat oturumunda kalır', () => {
+    // İhracat faturası e-Fatura mükellefine düzenlenir ama ayrı bir
+    // akıştır; oturum ihracat değilse listede görünmemeli.
+    expect(allowedProfilesForType(InvoiceType.ISTISNA, 'einvoice')).not.toContain(
+      InvoiceProfile.IHRACAT,
+    )
+    expect(allowedProfilesForType(InvoiceType.ISTISNA, 'einvoice', true)).toContain(
+      InvoiceProfile.IHRACAT,
+    )
+  })
+
+  it('mükellefiyet verilmezse hiçbir şey süzülmez', () => {
+    // Kütüphane alıcının mükellef olup olmadığını TAHMİN ETMEZ.
+    const hepsi = allowedProfilesForType(InvoiceType.SATIS)
+    expect(hepsi).toContain(InvoiceProfile.EARSIV)
+    expect(hepsi).toContain(InvoiceProfile.TEMEL)
+    expect(filterProfilesByLiability(hepsi)).toEqual(hepsi)
+    expect(filterTypesByLiability(allowedTypesForProfile(InvoiceProfile.TEMEL))).toEqual(
+      allowedTypesForProfile(InvoiceProfile.TEMEL),
+    )
+  })
+
+  it('e-Arşiv mükellefinde tipler de e-Arşiv profiline daralır', () => {
+    const t = allowedTypesForProfile(InvoiceProfile.TEMEL, 'earchive')
+    const earsiv = allowedTypesForProfile(InvoiceProfile.EARSIV)
+    expect(t.every((x) => earsiv.includes(x))).toBe(true)
+  })
+
+  it('oturum mükellefiyeti seçeneklerden alır ve durumda gösterir', () => {
+    const o = new InvoiceSession(girdi(), { liability: 'earchive' })
+    expect(o.state.liability).toBe('earchive')
+    expect(o.state.allowedProfiles).toEqual([InvoiceProfile.EARSIV])
+    expect(new InvoiceSession(girdi()).state.liability).toBeUndefined()
+  })
+
+  it('tip değişince uymayan profili çözer', () => {
+    // Uyuyorsa dokunulmaz.
+    expect(resolveProfileForType(InvoiceProfile.TICARI, InvoiceType.SATIS)).toBe(
+      InvoiceProfile.TICARI,
+    )
+    // Ticari faturada iade yok — Schematron temele düşürür.
+    expect(resolveProfileForType(InvoiceProfile.TICARI, InvoiceType.IADE)).toBe(
+      InvoiceProfile.TEMEL,
+    )
+    // Profil yoksa da bir sonuç verir.
+    expect(allowedProfilesForType(InvoiceType.ISTISNA)).toContain(
+      resolveProfileForType(undefined, InvoiceType.ISTISNA),
+    )
+  })
+
+  it('mükellefiyet iade çözümünü de kısıtlar', () => {
+    // e-Arşivde temel fatura yok; iade kuralı listeyi zorlayamaz.
+    expect(resolveProfileForType(InvoiceProfile.TICARI, InvoiceType.IADE, 'earchive')).toBe(
+      InvoiceProfile.EARSIV,
+    )
+  })
+})
+
+describe('alan temizleme', () => {
+  const atif = { id: 'ABC2026000000000', issueDate: '2026-08-01' }
+
+  it('patch undefined ile alan silemez, clear siler', () => {
+    const o = new InvoiceSession(girdi({ type: InvoiceType.IADE, billingReference: atif }))
+    // Derin birleştirmede undefined "dokunma" demektir.
+    o.patch({ billingReference: undefined })
+    expect(o.input.billingReference).toEqual(atif)
+    o.clear('billingReference')
+    expect(o.input.billingReference).toBeUndefined()
+  })
+
+  it('temizlenen alan doğrulamaya alan düzeyinde yansır', () => {
+    // Üretim reddedilse bile form hangi alanı işaretleyeceğini bilir:
+    // bulgu 'input' değil, eksik alanın kendi yolunu taşır.
+    const o = new InvoiceSession(girdi({ type: InvoiceType.IADE, billingReference: atif }))
+    expect(o.state.valid).toBe(true)
+    o.clear('billingReference')
+    expect(o.state.valid).toBe(false)
+    expect(o.state.issues).toEqual([
+      {
+        code: 'MISSING_BILLING_REFERENCE',
+        path: 'billingReference',
+        severity: 'error',
+        message: expect.stringContaining('billingReference'),
+      },
+    ])
+  })
+
+  it('temizlenen alan öneriye de yansır', () => {
+    const o = new InvoiceSession(girdi({ currencyCode: 'EUR', exchangeRate: { rate: 36.75 } }))
+    expect(o.state.suggestions.map((x) => x.id)).not.toContain('doviz/kur-zorunlu')
+    o.clear('exchangeRate')
+    expect(o.state.suggestions.map((x) => x.id)).toContain('doviz/kur-zorunlu')
+  })
+
+  it('birden çok alanı birlikte temizler', () => {
+    const o = new InvoiceSession(
+      girdi({ currencyCode: 'EUR', exchangeRate: { rate: 36.75 }, accountingCost: 'MRK-1' }),
+    )
+    o.clear('exchangeRate', 'accountingCost')
+    expect(o.input.exchangeRate).toBeUndefined()
+    expect(o.input.accountingCost).toBeUndefined()
+  })
+
+  it('olmayan alanı temizlemek dinleyiciyi uyandırmaz', () => {
+    const o = new InvoiceSession(girdi())
+    const dinleyici = vi.fn()
+    o.subscribe(dinleyici)
+    o.clear('billingReference')
+    o.clearLine(0, 'exemptionCode')
+    expect(dinleyici).not.toHaveBeenCalled()
+  })
+
+  it('satır alanını temizler', () => {
+    const o = new InvoiceSession(
+      girdi({
+        lines: [{ name: 'x', quantity: 1, unitPrice: 100, vatRate: 0, exemptionCode: '301' }],
+      }),
+    )
+    o.clearLine(0, 'exemptionCode')
+    expect(o.input.lines[0]?.exemptionCode).toBeUndefined()
+    expect(o.input.lines[0]?.name).toBe('x')
+  })
+
+  it('olmayan satırda hata verir', () => {
+    expect(() => new InvoiceSession(girdi()).clearLine(5, 'exemptionCode')).toThrow(RangeError)
+  })
+})
+
+describe('kimlik listesi', () => {
+  const kimlikli = (): InvoiceSession =>
+    new InvoiceSession(
+      girdi({
+        customer: {
+          taxNumber: '0149537825',
+          name: 'Alıcı Ltd.',
+          address: { district: 'Kadıköy', city: 'İstanbul' },
+          identifications: [
+            { schemeId: 'MUSTERINO', value: 'M-1' },
+            { schemeId: 'PLAKA', value: '34ABC123' },
+          ],
+        },
+      }),
+    )
+
+  it('kaydı siler, sonrakiler kayar', () => {
+    const o = kimlikli()
+    o.removeIdentification('customer', 0)
+    expect(o.input.customer.identifications).toEqual([{ schemeId: 'PLAKA', value: '34ABC123' }])
+  })
+
+  it('son kayıt silinince alan tümden kalkar', () => {
+    // Boş dizi bırakmak schemeID'siz bir cac:PartyIdentification riski
+    // taşır; alanı hiç yazmamak doğru davranıştır.
+    const o = kimlikli()
+    o.removeIdentification('customer', 1)
+    o.removeIdentification('customer', 0)
+    expect(o.input.customer.identifications).toBeUndefined()
+    expect('identifications' in o.input.customer).toBe(false)
+  })
+
+  it('geçersiz sırada bir şey olmaz', () => {
+    const o = kimlikli()
+    const dinleyici = vi.fn()
+    o.subscribe(dinleyici)
+    o.removeIdentification('customer', 9)
+    o.removeIdentification('customer', -1)
+    o.removeIdentification('buyerCustomer', 0)
+    expect(dinleyici).not.toHaveBeenCalled()
+    expect(o.input.customer.identifications).toHaveLength(2)
+  })
+
+  it('listeyi tümüyle değiştirir', () => {
+    const o = kimlikli()
+    o.setIdentifications('customer', [{ schemeId: 'IDIS', value: 'S-9' }])
+    expect(o.input.customer.identifications).toEqual([{ schemeId: 'IDIS', value: 'S-9' }])
+    o.setIdentifications('customer', [])
+    expect(o.input.customer.identifications).toBeUndefined()
+  })
+
+  it('olmayan tarafa yazmaya çalışmak hata verir', () => {
+    expect(() => kimlikli().setIdentifications('buyerCustomer', [])).toThrow(RangeError)
+  })
+
+  it('kimlik belgeye yazılır', () => {
+    const o = kimlikli()
+    expect(o.toXml()).toContain('<cbc:ID schemeID="MUSTERINO">M-1</cbc:ID>')
+    o.setIdentifications('customer', [])
+    expect(o.toXml()).not.toContain('MUSTERINO')
   })
 })

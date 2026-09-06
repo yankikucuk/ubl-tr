@@ -73,6 +73,73 @@ const iceren = (liste: readonly string[], deger: string | undefined): boolean =>
   deger !== undefined && liste.includes(deger)
 
 /**
+ * Alıcının mükellefiyet durumu.
+ *
+ * Türkiye'de fatura düzenlemenin ilk kararı budur ve gerisini belirler:
+ * alıcı GİB'in e-Fatura mükellef listesinde ise **e-Fatura**, değilse
+ * **e-Arşiv Fatura** düzenlenir. Yanlış tarafı seçmek belgeyi geçersiz
+ * kılar — e-Fatura mükellefine e-Arşiv düzenlenemez, tersi de olmaz.
+ *
+ * - `'einvoice'` — e-Fatura mükellefi: `EARSIVFATURA` dışındaki profiller
+ * - `'earchive'` — mükellef değil: yalnızca `EARSIVFATURA` profili
+ *
+ * Bu kütüphane mükellef listesini **sorgulamaz** (ağ isteği yapmaz);
+ * sonucu siz verirsiniz, kütüphane ona göre seçenekleri daraltır.
+ */
+export type CustomerLiability = 'einvoice' | 'earchive'
+
+/**
+ * Profil listesini mükellefiyete göre süzer.
+ *
+ * İhracat istisnası: `isExport` verilirse `IHRACAT` profili e-Fatura
+ * mükellefinde de kalır — ihracat faturası e-Fatura mükellefine düzenlenen
+ * bir belgedir ve profili ayrıdır.
+ *
+ * @param profiles - Süzülecek profiller
+ * @param liability - Mükellefiyet durumu; verilmezse süzme yapılmaz
+ * @param isExport - İhracat oturumu mu
+ * @returns Mükellefiyetin izin verdiği profiller
+ *
+ * @example
+ * ```ts
+ * filterProfilesByLiability([InvoiceProfile.TEMEL, InvoiceProfile.EARSIV], 'earchive')
+ * // ['EARSIVFATURA']
+ * ```
+ */
+export const filterProfilesByLiability = (
+  profiles: readonly InvoiceProfileId[],
+  liability?: CustomerLiability,
+  isExport = false,
+): InvoiceProfileId[] => {
+  if (liability === undefined) return [...profiles]
+  if (liability === 'earchive') return profiles.filter((p) => p === InvoiceProfile.EARSIV)
+  return profiles.filter((p) => {
+    if (p === InvoiceProfile.EARSIV) return false
+    if (p === InvoiceProfile.IHRACAT) return isExport
+    return true
+  })
+}
+
+/**
+ * Tip listesini mükellefiyete göre süzer.
+ *
+ * Profil daraldığında ona ait olmayan tipler de daralır: e-Arşiv
+ * mükellefinde yalnızca `EARSIVFATURA` profilinin taşıdığı tipler kalır.
+ *
+ * @param types - Süzülecek tipler
+ * @param liability - Mükellefiyet durumu; verilmezse süzme yapılmaz
+ * @returns Mükellefiyetin izin verdiği tipler
+ */
+export const filterTypesByLiability = (
+  types: readonly InvoiceTypeCode[],
+  liability?: CustomerLiability,
+): readonly InvoiceTypeCode[] => {
+  if (liability !== 'earchive') return types
+  const earsiv = PROFILE_TYPES[InvoiceProfile.EARSIV] as readonly string[]
+  return types.filter((t) => earsiv.includes(t))
+}
+
+/**
  * Profil ve fatura tipine göre hangi alanların anlamlı olduğunu türetir.
  *
  * Bu bir **doğrulama değil, yönlendirmedir**: gizlenen bir alan yasak
@@ -169,9 +236,17 @@ export const deriveLineFieldVisibility = (context: VisibilityContext): LineField
  * // TICARIFATURA yoktur: iade temel faturayla düzenlenir.
  * ```
  */
-export const allowedProfilesForType = (type: InvoiceTypeCode): InvoiceProfileId[] =>
-  (Object.keys(PROFILE_TYPES) as InvoiceProfileId[]).filter((p) =>
-    (PROFILE_TYPES[p] as readonly string[]).includes(type),
+export const allowedProfilesForType = (
+  type: InvoiceTypeCode,
+  liability?: CustomerLiability,
+  isExport = false,
+): InvoiceProfileId[] =>
+  filterProfilesByLiability(
+    (Object.keys(PROFILE_TYPES) as InvoiceProfileId[]).filter((p) =>
+      (PROFILE_TYPES[p] as readonly string[]).includes(type),
+    ),
+    liability,
+    isExport,
   )
 
 /**
@@ -185,8 +260,51 @@ export const allowedProfilesForType = (type: InvoiceTypeCode): InvoiceProfileId[
  * allowedTypesForProfile(InvoiceProfile.IHRACAT) // ['ISTISNA']
  * ```
  */
-export const allowedTypesForProfile = (profile: InvoiceProfileId): readonly InvoiceTypeCode[] =>
-  PROFILE_TYPES[profile]
+export const allowedTypesForProfile = (
+  profile: InvoiceProfileId,
+  liability?: CustomerLiability,
+): readonly InvoiceTypeCode[] => filterTypesByLiability(PROFILE_TYPES[profile], liability)
+
+/**
+ * Tip değiştiğinde profilin hâlâ geçerli olup olmadığını çözer.
+ *
+ * Formda tip seçici ile profil seçici birbirine bağlıdır: kullanıcı tipi
+ * değiştirdiğinde eldeki profil o tipe uymayabilir. Bu işlev, uyuyorsa
+ * profili korur; uymuyorsa mükellefiyete uygun bir profil önerir.
+ *
+ * İade faturasında özel bir kural var: iade **temel** faturayla düzenlenir,
+ * ticari faturayla değil. Bu GİB Schematron kuralıdır, tercih değil.
+ *
+ * @param currentProfile - Formdaki mevcut profil
+ * @param newType - Yeni seçilen fatura tipi
+ * @param liability - Alıcının mükellefiyet durumu
+ * @param isExport - İhracat oturumu mu
+ * @returns Korunan ya da önerilen profil
+ *
+ * @example
+ * ```ts
+ * // Uyuyorsa dokunulmaz
+ * resolveProfileForType(InvoiceProfile.TICARI, InvoiceType.SATIS) // 'TICARIFATURA'
+ * // Ticari faturada iade yok; temele düşer
+ * resolveProfileForType(InvoiceProfile.TICARI, InvoiceType.IADE)  // 'TEMELFATURA'
+ * ```
+ */
+export const resolveProfileForType = (
+  currentProfile: InvoiceProfileId | undefined,
+  newType: InvoiceTypeCode,
+  liability?: CustomerLiability,
+  isExport = false,
+): InvoiceProfileId => {
+  const izinli = allowedProfilesForType(newType, liability, isExport)
+  if (currentProfile !== undefined && izinli.includes(currentProfile)) return currentProfile
+  // İade temel faturayla düzenlenir — Schematron kuralı.
+  if (
+    (RETURN_TYPES as readonly string[]).includes(newType) &&
+    izinli.includes(InvoiceProfile.TEMEL)
+  )
+    return InvoiceProfile.TEMEL
+  return izinli[0] ?? InvoiceProfile.TEMEL
+}
 
 /**
  * Bir fatura tipinde kullanılabilen muafiyet kodlarını döndürür.

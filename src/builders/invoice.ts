@@ -31,6 +31,7 @@ import {
 import {
   amountInWordsNote,
   type AmountInWordsNoteOptions,
+  DocumentInputError,
   calculateInvoice,
   type CalculatedInvoice,
   type CalculatedLine,
@@ -485,7 +486,9 @@ export const buildInvoice = (
   options: BuildInvoiceOptions = {},
 ): { readonly root: XmlElement; readonly totals: CalculatedInvoice } => {
   if ((options.validateProfileType ?? true) && !isProfileTypeAllowed(input.profile, input.type)) {
-    throw new RangeError(
+    throw new DocumentInputError(
+      'PROFILE_TYPE_MISMATCH',
+      'type',
       `"${input.profile}" profilinde "${input.type}" fatura tipi kullanılamaz. ` +
         'GİB bu eşleşmeyi Schematron ile denetler; XSD denetlemez, ' +
         'yani belge şema doğrulamasından geçse bile reddedilir.',
@@ -503,7 +506,9 @@ export const buildInvoice = (
   const notlar = [...(yazyla === undefined ? [] : [yazyla]), ...(input.notes ?? [])]
 
   if (RETURN_TYPES.includes(input.type) && input.billingReference === undefined) {
-    throw new RangeError(
+    throw new DocumentInputError(
+      'MISSING_BILLING_REFERENCE',
+      'billingReference',
       `"${input.type}" iade tipidir; iade edilen faturaya atıf (billingReference) zorunludur.`,
     )
   }

@@ -20,6 +20,7 @@ import {
   subtract,
   sum,
 } from '../../core/index.js'
+import { DocumentInputError } from '../errors.js'
 
 /** Sayı, metin ya da hazır ondalık olarak verilebilen değer. */
 export type NumericInput = number | string | Decimal
@@ -230,7 +231,9 @@ export const calculateLine = (input: InvoiceLineInput, id: number): CalculatedLi
   const grossAmount = multiply(quantity, unitPrice)
 
   if (input.discountRate !== undefined && input.discountAmount !== undefined) {
-    throw new RangeError(
+    throw new DocumentInputError(
+      'DISCOUNT_RATE_AND_AMOUNT',
+      `lines[${String(id - 1)}].discountRate`,
       `Satır ${String(id)}: iskonto oranı ve tutarı birlikte verilemez; biri seçilmelidir.`,
     )
   }
@@ -252,7 +255,11 @@ export const calculateLine = (input: InvoiceLineInput, id: number): CalculatedLi
   for (const tax of input.taxes ?? []) {
     const tanim = taxDefinition(tax.code)
     if (tanim === undefined) {
-      throw new RangeError(`Satır ${String(id)}: bilinmeyen vergi türü kodu "${tax.code}".`)
+      throw new DocumentInputError(
+        'UNKNOWN_TAX_TYPE_CODE',
+        `lines[${String(id - 1)}].taxes`,
+        `Satır ${String(id)}: bilinmeyen vergi türü kodu "${tax.code}".`,
+      )
     }
     const rate = toDecimal(tax.rate)
     const taxAmount = percentage(lineExtensionAmount, rate)
@@ -274,7 +281,9 @@ export const calculateLine = (input: InvoiceLineInput, id: number): CalculatedLi
   if (input.withholdingCode !== undefined) {
     const tanim = withholdingDefinition(input.withholdingCode)
     if (tanim === undefined) {
-      throw new RangeError(
+      throw new DocumentInputError(
+        'UNKNOWN_WITHHOLDING_CODE',
+        `lines[${String(id - 1)}].withholdingCode`,
         `Satır ${String(id)}: bilinmeyen tevkifat kodu "${input.withholdingCode}".`,
       )
     }
@@ -354,7 +363,7 @@ export interface InvoiceTotalsInput {
  */
 export const calculateInvoice = (input: InvoiceTotalsInput): CalculatedInvoice => {
   if (input.lines.length === 0) {
-    throw new RangeError('Fatura en az bir satır içermelidir.')
+    throw new DocumentInputError('NO_LINES', 'lines', 'Fatura en az bir satır içermelidir.')
   }
   const currencyCode = input.currencyCode ?? DEFAULT_CURRENCY_CODE
   const scale = currencyDefinition(currencyCode).minorUnits
