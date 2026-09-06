@@ -49,6 +49,14 @@ export const Currency = {
 /** Tabloda tanımlı para birimi kodları. */
 export type KnownCurrencyCode = keyof typeof Currency
 
+/**
+ * {@link Currency} tablosunun dizi hâli.
+ *
+ * Arayüzlerin para birimi seçim kutusunu doldurması için; sıra tablodaki
+ * sırayı korur, en yaygın kullanılanlar başta gelir.
+ */
+export const CURRENCY_DEFINITIONS: readonly CurrencyDefinition[] = Object.values(Currency)
+
 /** UBL-TR belgelerinin varsayılan para birimi. */
 export const DEFAULT_CURRENCY_CODE = 'TRY'
 
@@ -78,3 +86,25 @@ export const currencyDefinition = (code: string, tables?: CodeTables): CurrencyD
   const bilinen = (Currency as Record<string, CurrencyDefinition | undefined>)[code]
   return bilinen ?? { code, minorUnits: 2, name: code }
 }
+
+/**
+ * Bir para birimi kodunun tabloda tanımlı olup olmadığını söyler.
+ *
+ * `false` dönmesi kodun **geçersiz olduğu anlamına gelmez**: tablo bilerek
+ * kapalı değildir ve {@link currencyDefinition} bilinmeyen bir kod için iki
+ * ondalık basamaklı makul bir varsayılan üretir. Bu işlev, arayüzde
+ * "bu kodun ondalık basamağı varsayıldı" uyarısı göstermek içindir.
+ *
+ * @param code - ISO 4217 üç harfli kod
+ * @param tables - Gömülü tablonun önüne geçen ek tanımlar
+ * @returns Kod tabloda tanımlıysa `true`
+ *
+ * @example
+ * ```ts
+ * isValidCurrencyCode('TRY') // true
+ * isValidCurrencyCode('XYZ') // false — ama belge yine düzenlenebilir
+ * ```
+ */
+export const isValidCurrencyCode = (code: string, tables?: CodeTables): boolean =>
+  findByCode(tables?.currencies, code) !== undefined ||
+  Object.prototype.hasOwnProperty.call(Currency, code)

@@ -126,6 +126,23 @@ const PARTY_CHILDREN: readonly ChildRule[] = [
   a0('AgentParty'),
 ]
 
+/** `cac:Package` tipinin çocuk sırası; fiili kap da bu tiptedir. */
+const PACKAGE_CHILDREN: readonly ChildRule[] = [
+  b0('ID'),
+  b0('Quantity'),
+  b0('ReturnableMaterialIndicator'),
+  b0('PackageLevelCode'),
+  b0('PackagingTypeCode'),
+  bn('PackingMaterial'),
+  an('ContainedPackage'),
+  a0('ContainingTransportEquipment'),
+  an('GoodsItem'),
+  an('MeasurementDimension'),
+  an('DeliveryUnit'),
+  a0('Delivery'),
+  a0('Despatch'),
+]
+
 export const STRUCTURE_MODELS: readonly ElementModel[] = [
   {
     namespace: 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
@@ -828,6 +845,16 @@ export const STRUCTURE_MODELS: readonly ElementModel[] = [
       a0('MinimumTemperature'),
       a0('MaximumTemperature'),
     ],
+  },
+  {
+    namespace: CAC,
+    name: 'ActualPackage',
+    children: PACKAGE_CHILDREN,
+  },
+  {
+    namespace: CAC,
+    name: 'Package',
+    children: PACKAGE_CHILDREN,
   },
   {
     namespace: CAC,

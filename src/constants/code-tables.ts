@@ -1,5 +1,6 @@
 import type { CurrencyDefinition } from './currency.js'
 import type { ExemptionDefinition } from './exemption.js'
+import type { PackagingTypeDefinition } from './packaging.js'
 import type { TaxDefinition } from './tax.js'
 import type { UnitDefinition } from './unit.js'
 import type { WithholdingDefinition } from './withholding.js'
@@ -56,6 +57,8 @@ export interface CodeTables {
   readonly units?: readonly UnitDefinition[]
   /** Ek ya da düzeltilmiş para birimi tanımları. */
   readonly currencies?: readonly CurrencyDefinition[]
+  /** Ambalaj cinsi tanımları — `packagingTypeDefinition` bunlara önce bakar. */
+  readonly packagingTypes?: readonly PackagingTypeDefinition[]
 }
 
 /**

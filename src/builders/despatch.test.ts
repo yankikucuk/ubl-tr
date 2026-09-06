@@ -242,3 +242,70 @@ describe('satırlar', () => {
     expect(cocuklar.find((c) => c.name === 'Shipment')?.namespace).toBe(Namespace.COMMON_AGGREGATE)
   })
 })
+
+describe('taşıma birimi ve kap bilgisi', () => {
+  it('kapları ambalaj cinsi koduyla UBL sırasında yazar', () => {
+    // UBL sırası: ID → Quantity → ReturnableMaterialIndicator →
+    // PackageLevelCode → PackagingTypeCode. Kodu miktardan önce yazmak
+    // belgeyi şema-geçersiz kılar.
+    const xml = buildDespatchAdviceXml(
+      girdi({
+        shipment: {
+          transportHandlingUnits: [
+            {
+              id: 'TB-1',
+              totalPackageQuantity: 12,
+              actualPackages: [
+                {
+                  id: 'K-1',
+                  quantity: 12,
+                  returnable: false,
+                  packageLevelCode: '1',
+                  packagingTypeCode: 'BX',
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    expect(xml).toContain(
+      '<cac:TransportHandlingUnit><cbc:ID>TB-1</cbc:ID><cbc:TotalPackageQuantity>12</cbc:TotalPackageQuantity><cac:ActualPackage><cbc:ID>K-1</cbc:ID><cbc:Quantity>12</cbc:Quantity><cbc:ReturnableMaterialIndicator>false</cbc:ReturnableMaterialIndicator><cbc:PackageLevelCode>1</cbc:PackageLevelCode><cbc:PackagingTypeCode>BX</cbc:PackagingTypeCode></cac:ActualPackage></cac:TransportHandlingUnit>',
+    )
+  })
+
+  it('kapları ekipmandan ÖNCE yazar', () => {
+    const xml = buildDespatchAdviceXml(
+      girdi({
+        shipment: {
+          transportHandlingUnits: [
+            {
+              actualPackages: [{ packagingTypeCode: 'CN' }],
+              transportEquipment: [{ id: 'KONT-1' }],
+            },
+          ],
+        },
+      }),
+    )
+    expect(xml.indexOf('ActualPackage')).toBeLessThan(xml.indexOf('TransportEquipment'))
+  })
+
+  it('ekipman kısayolu eski çıktıyı korur', () => {
+    const xml = buildDespatchAdviceXml(girdi({ shipment: { transportEquipment: [{ id: 'E-1' }] } }))
+    expect(xml).toContain(
+      '<cac:TransportHandlingUnit><cac:TransportEquipment><cbc:ID>E-1</cbc:ID></cac:TransportEquipment></cac:TransportHandlingUnit>',
+    )
+  })
+
+  it('kısayoldan üretilen birimler tam biçimdekilerden önce yazılır', () => {
+    const xml = buildDespatchAdviceXml(
+      girdi({
+        shipment: {
+          transportEquipment: [{ id: 'E-1' }],
+          transportHandlingUnits: [{ id: 'TB-2' }],
+        },
+      }),
+    )
+    expect(xml.indexOf('E-1')).toBeLessThan(xml.indexOf('TB-2'))
+  })
+})

@@ -1,11 +1,24 @@
 export { findByCode, type CodeTables } from './code-tables.js'
 export {
   Currency,
+  CURRENCY_DEFINITIONS,
   currencyDefinition,
   DEFAULT_CURRENCY_CODE,
+  isValidCurrencyCode,
   type CurrencyDefinition,
   type KnownCurrencyCode,
 } from './currency.js'
+export {
+  isValidPackagingTypeCode,
+  PACKAGING_TYPE_DEFINITIONS,
+  packagingTypeDefinition,
+  type PackagingTypeDefinition,
+} from './packaging.js'
+export {
+  isKnownPartyIdentificationScheme,
+  PARTY_IDENTIFICATION_SCHEMES,
+  type PartyIdentificationScheme,
+} from './party-scheme.js'
 export {
   DespatchProfile,
   DespatchType,
@@ -30,6 +43,7 @@ export {
   type DocumentTypeName,
 } from './document.js'
 export {
+  availableBillingDocumentTypes,
   EXEMPTION_TYPES,
   InvoiceProfile,
   InvoiceType,

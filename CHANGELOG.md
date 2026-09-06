@@ -175,6 +175,24 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
   verildiğinde ek vergilerin artırıcı/azaltıcı etkisi **uygulanmaz** —
   kullanıcı matrahı zaten nihai hâliyle bildirmiştir. Tevkifat, özel
   matrahtan doğan KDV üzerinden hesaplanır.
+- **Kod listeleri**:
+  - **Ambalaj cinsi** (`PACKAGING_TYPE_DEFINITIONS`, `packagingTypeDefinition`,
+    `isValidPackagingTypeCode`) — UN/ECE Rec 21'in UBL-TR alt kümesi, 27 kod.
+    `CodeTables.packagingTypes` ile genişletilebilir
+  - **Taşıma birimi ve kap** (`TransportHandlingUnitInput`,
+    `ActualPackageInput`) — `cac:ActualPackage` ile kap numarası, adet, iade
+    edilebilirlik, seviye ve ambalaj cinsi. UBL sırası `ActualPackage`'ı
+    `TransportEquipment`'tan önce koyar; kap içinde de kod miktardan
+    SONRA gelir
+  - `CURRENCY_DEFINITIONS` ve `isValidCurrencyCode` — para birimi tablosunun
+    dizi hâli ve tanımlılık denetimi. `false` dönmesi belgeyi engellemez;
+    tablo kapalı değildir
+  - `PARTY_IDENTIFICATION_SCHEMES` ve `isKnownPartyIdentificationScheme` —
+    `cac:PartyIdentification` şema kimlikleri. Buna dayanan bir doğrulama
+    kuralı **yoktur**: GİB listeyi genişlettiğinde yeni kodu kullanan doğru
+    bir belgeyi reddetmek istemiyoruz. Liste arayüz seçim kutusu içindir
+  - `availableBillingDocumentTypes` — iade atfında yazılabilecek belge tipi
+    kodları
 - **Kod tablosu genişletme** (`CodeTables`) — gömülü GİB kod listelerinin
   önüne geçen ek tanımlar; yeni kod eklenebilir, var olan tanım
   düzeltilebilir. GİB bir kod yayımladığında paket sürümü beklemek

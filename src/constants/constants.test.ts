@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
+import { CURRENCY_DEFINITIONS, currencyDefinition, isValidCurrencyCode } from './currency.js'
 import { FOREIGN_LICENSE_PLATE_SCHEMES, isValidLicensePlateScheme } from './despatch.js'
 import { DocumentType, documentNamespace, UBL_VERSION_ID } from './document.js'
+import { availableBillingDocumentTypes, InvoiceType } from './invoice.js'
 import { Namespace, NamespacePrefix } from './namespace.js'
+import {
+  isValidPackagingTypeCode,
+  PACKAGING_TYPE_DEFINITIONS,
+  packagingTypeDefinition,
+} from './packaging.js'
+import { isKnownPartyIdentificationScheme, PARTY_IDENTIFICATION_SCHEMES } from './party-scheme.js'
 import {
   isValidPaymentMeansCode,
   PAYMENT_MEANS_CODES,
@@ -101,5 +109,79 @@ describe('plaka şemaları', () => {
     // Yabancı plakalar Türk plaka biçim kuralından muaftır.
     expect(FOREIGN_LICENSE_PLATE_SCHEMES.has('YABANCIPLAKA')).toBe(true)
     expect(FOREIGN_LICENSE_PLATE_SCHEMES.has('PLAKA')).toBe(false)
+  })
+})
+
+describe('ambalaj cinsi kodları', () => {
+  it('bilinen kodun Türkçe adını verir', () => {
+    expect(packagingTypeDefinition('BX')?.name).toBe('Kutu')
+    expect(packagingTypeDefinition('NE')?.name).toBe('Ambalajsız')
+  })
+
+  it('bilinmeyen kod için undefined döner', () => {
+    expect(packagingTypeDefinition('XX')).toBeUndefined()
+    expect(isValidPackagingTypeCode('XX')).toBe(false)
+  })
+
+  it('kod tablosu gömülü tanımın önüne geçer', () => {
+    const tablolar = { packagingTypes: [{ code: 'BX', name: 'Özel kutu' }] }
+    expect(packagingTypeDefinition('BX', tablolar)?.name).toBe('Özel kutu')
+    expect(isValidPackagingTypeCode('ZZ', { packagingTypes: [{ code: 'ZZ', name: 'Yeni' }] })).toBe(
+      true,
+    )
+  })
+
+  it('kodlar benzersizdir', () => {
+    const kodlar = PACKAGING_TYPE_DEFINITIONS.map((t) => t.code)
+    expect(new Set(kodlar).size).toBe(kodlar.length)
+  })
+})
+
+describe('para birimi listesi', () => {
+  it('tablonun dizi hâli aynı tanımları taşır', () => {
+    expect(CURRENCY_DEFINITIONS.map((c) => c.code)).toContain('TRY')
+    expect(CURRENCY_DEFINITIONS.find((c) => c.code === 'JPY')?.minorUnits).toBe(0)
+  })
+
+  it('bilinmeyen kod geçersiz sayılır ama belge yine düzenlenebilir', () => {
+    expect(isValidCurrencyCode('TRY')).toBe(true)
+    expect(isValidCurrencyCode('XYZ')).toBe(false)
+    // Tablo kapalı değildir: bilinmeyen kod için makul varsayılan üretilir.
+    expect(currencyDefinition('XYZ').minorUnits).toBe(2)
+  })
+
+  it('kod tablosu bilinmeyen kodu tanımlı hâle getirir', () => {
+    const tablolar = { currencies: [{ code: 'XYZ', minorUnits: 3, name: 'Deneme' }] }
+    expect(isValidCurrencyCode('XYZ', tablolar)).toBe(true)
+  })
+})
+
+describe('taraf kimlik şemaları', () => {
+  it('bilinen şemayı tanır', () => {
+    expect(isKnownPartyIdentificationScheme('ABONENO')).toBe(true)
+    expect(isKnownPartyIdentificationScheme('TESISATNO')).toBe(true)
+  })
+
+  it('bilinmeyen şema için false döner ama liste kapalı değildir', () => {
+    // Liste yalnızca arayüz içindir; buna dayanan bir doğrulama kuralı
+    // yoktur, çünkü GİB listeyi genişlettiğinde doğru belgeyi reddederdi.
+    expect(isKnownPartyIdentificationScheme('YENIKOD')).toBe(false)
+  })
+
+  it('şemalar benzersizdir', () => {
+    expect(new Set(PARTY_IDENTIFICATION_SCHEMES).size).toBe(PARTY_IDENTIFICATION_SCHEMES.length)
+  })
+})
+
+describe('iade atfı belge tipi', () => {
+  it('iade tipinde faturanın kendi tipini verir', () => {
+    expect(availableBillingDocumentTypes(InvoiceType.IADE)).toEqual([InvoiceType.IADE])
+    expect(availableBillingDocumentTypes(InvoiceType.TEVKIFAT_IADE)).toEqual([
+      InvoiceType.TEVKIFAT_IADE,
+    ])
+  })
+
+  it('iade olmayan tipte boş liste verir', () => {
+    expect(availableBillingDocumentTypes(InvoiceType.SATIS)).toEqual([])
   })
 })

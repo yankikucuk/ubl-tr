@@ -204,6 +204,28 @@ export const RETURN_TYPES: readonly InvoiceTypeCode[] = [
   T.YTB_TEVKIFAT_IADE,
 ]
 
+/**
+ * Bir fatura tipi için iade atfında yazılabilecek belge tipi kodlarını
+ * döndürür.
+ *
+ * `cac:BillingReference/cac:InvoiceDocumentReference/cbc:DocumentTypeCode`
+ * alanında atıf yapılan asıl belgenin tipi bildirilir. GİB Schematron'u
+ * iade faturalarında bu alanı faturanın kendi tipiyle bekler; kurucu
+ * verilmediğinde onu kendiliğinden yazar. Bu işlev arayüzün seçim
+ * kutusunu doldurması içindir.
+ *
+ * @param type - Fatura tipi
+ * @returns İzin verilen belge tipi kodları; iade tipi değilse boş dizi
+ *
+ * @example
+ * ```ts
+ * availableBillingDocumentTypes('IADE')  // ['IADE']
+ * availableBillingDocumentTypes('SATIS') // []
+ * ```
+ */
+export const availableBillingDocumentTypes = (type: InvoiceTypeCode): readonly InvoiceTypeCode[] =>
+  RETURN_TYPES.includes(type) ? [type] : []
+
 /** Tevkifat grubundaki tipler; bu tiplerde tevkifat toplamı zorunludur. */
 export const WITHHOLDING_TYPES: readonly InvoiceTypeCode[] = [
   T.TEVKIFAT,

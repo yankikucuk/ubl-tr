@@ -11,6 +11,7 @@ import {
 import {
   container,
   decimal,
+  type Decimal,
   leaf,
   optionalContainer,
   optionalLeaf,
@@ -66,6 +67,40 @@ export interface TransportEquipmentInput {
   readonly schemeId?: string
 }
 
+/** Fiili kap bilgisi — `cac:ActualPackage`. */
+export interface ActualPackageInput {
+  /** Kap numarası — `cbc:ID`. */
+  readonly id?: string
+  /** Kap adedi — `cbc:Quantity`. */
+  readonly quantity?: NumericInput
+  /** Kap iade edilebilir mi — `cbc:ReturnableMaterialIndicator`. */
+  readonly returnable?: boolean
+  /** Kap seviyesi kodu — `cbc:PackageLevelCode`. */
+  readonly packageLevelCode?: string
+  /**
+   * Ambalaj cinsi kodu — `cbc:PackagingTypeCode`.
+   *
+   * UN/ECE Rec 21 kodu; bkz. `PACKAGING_TYPE_DEFINITIONS`.
+   */
+  readonly packagingTypeCode?: string
+}
+
+/**
+ * Taşıma birimi — `cac:TransportHandlingUnit`.
+ *
+ * Malın sevkiyatta hangi kaplarla ve hangi ekipmanla taşındığını taşır.
+ */
+export interface TransportHandlingUnitInput {
+  /** Taşıma birimi numarası — `cbc:ID`. */
+  readonly id?: string
+  /** Toplam kap adedi — `cbc:TotalPackageQuantity`. */
+  readonly totalPackageQuantity?: NumericInput
+  /** Fiili kaplar. */
+  readonly actualPackages?: readonly ActualPackageInput[]
+  /** Bu birimdeki taşıma ekipmanları. */
+  readonly transportEquipment?: readonly TransportEquipmentInput[]
+}
+
 /** Sevkiyat bilgisi — `cac:Shipment`. */
 export interface ShipmentInput {
   /** Sevkiyat sıra numarası; varsayılan `'1'`. */
@@ -84,6 +119,15 @@ export interface ShipmentInput {
   readonly licensePlates?: readonly LicensePlateInput[]
   /** Taşıma ekipmanları. */
   readonly transportEquipment?: readonly TransportEquipmentInput[]
+  /**
+   * Taşıma birimleri — tam biçim.
+   *
+   * {@link ShipmentInput.transportEquipment} her ekipman için içeriği
+   * yalnızca ekipmandan ibaret bir birim üretir; kap bilgisi de gerekiyorsa
+   * bu alan kullanılır. İkisi birlikte verilirse önce kısayoldan üretilen
+   * birimler yazılır.
+   */
+  readonly transportHandlingUnits?: readonly TransportHandlingUnitInput[]
 }
 
 /** Bir e-İrsaliye satırı — `cac:DespatchLine`. */
@@ -165,6 +209,49 @@ export interface BuildDespatchOptions {
   readonly format?: 'compact' | 'indented'
 }
 
+/** Sayısal girdiyi ondalığa çevirir. */
+const asDecimal = (value: NumericInput): Decimal =>
+  typeof value === 'object' ? value : decimal(value)
+
+/** Bir taşıma ekipmanını `cac:TransportEquipment` öğesine çevirir. */
+const buildTransportEquipment = (ekipman: TransportEquipmentInput): XmlElement =>
+  container(CAC, 'TransportEquipment', [
+    leaf(
+      CBC,
+      'ID',
+      ekipman.id,
+      ekipman.schemeId === undefined ? [] : [{ name: 'schemeID', value: ekipman.schemeId }],
+    ),
+  ])
+
+/** Bir taşıma birimini `cac:TransportHandlingUnit` öğesine çevirir. */
+const buildTransportHandlingUnit = (birim: TransportHandlingUnitInput): XmlElement =>
+  container(CAC, 'TransportHandlingUnit', [
+    optionalLeaf(CBC, 'ID', birim.id),
+    birim.totalPackageQuantity === undefined
+      ? undefined
+      : leaf(
+          CBC,
+          'TotalPackageQuantity',
+          toStringValueRange(asDecimal(birim.totalPackageQuantity), 0, 6),
+        ),
+    // UBL sırası: ActualPackage, TransportEquipment'tan ÖNCE gelir.
+    ...(birim.actualPackages ?? []).map((kap) =>
+      container(CAC, 'ActualPackage', [
+        optionalLeaf(CBC, 'ID', kap.id),
+        kap.quantity === undefined
+          ? undefined
+          : leaf(CBC, 'Quantity', toStringValueRange(asDecimal(kap.quantity), 0, 6)),
+        kap.returnable === undefined
+          ? undefined
+          : leaf(CBC, 'ReturnableMaterialIndicator', kap.returnable ? 'true' : 'false'),
+        optionalLeaf(CBC, 'PackageLevelCode', kap.packageLevelCode),
+        optionalLeaf(CBC, 'PackagingTypeCode', kap.packagingTypeCode),
+      ]),
+    ),
+    ...(birim.transportEquipment ?? []).map(buildTransportEquipment),
+  ])
+
 /** Sevkiyat bloğunu üretir. */
 const buildShipment = (shipment: ShipmentInput, bosGoodsItem: boolean): XmlElement =>
   container(CAC, 'Shipment', [
@@ -203,17 +290,9 @@ const buildShipment = (shipment: ShipmentInput, bosGoodsItem: boolean): XmlEleme
       ]),
     ]),
     ...(shipment.transportEquipment ?? []).map((ekipman) =>
-      container(CAC, 'TransportHandlingUnit', [
-        container(CAC, 'TransportEquipment', [
-          leaf(
-            CBC,
-            'ID',
-            ekipman.id,
-            ekipman.schemeId === undefined ? [] : [{ name: 'schemeID', value: ekipman.schemeId }],
-          ),
-        ]),
-      ]),
+      container(CAC, 'TransportHandlingUnit', [buildTransportEquipment(ekipman)]),
     ),
+    ...(shipment.transportHandlingUnits ?? []).map(buildTransportHandlingUnit),
   ])
 
 /** Bir irsaliye satırını üretir. */
