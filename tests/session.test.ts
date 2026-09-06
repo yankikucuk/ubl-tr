@@ -20,9 +20,11 @@ import {
   filterProfilesByLiability,
   filterTypesByLiability,
   resolveProfileForType,
+  resolveTypeForProfile,
 } from '../src/session/field-visibility.js'
 import { InvoiceSession } from '../src/session/invoice-session.js'
-import { suggest, SUGGESTION_RULES } from '../src/session/suggestion.js'
+import { linePath, parseInvoicePath } from '../src/session/path.js'
+import { diffSuggestions, suggest, SUGGESTION_RULES } from '../src/session/suggestion.js'
 
 const girdi = (over: Partial<InvoiceInput> = {}): InvoiceInput => ({
   id: 'ABC2026000000001',
@@ -880,5 +882,133 @@ describe('değişiklik ayrıntısı', () => {
   it('ihracat bayrağını durumda gösterir', () => {
     expect(new InvoiceSession(girdi()).state.isExport).toBe(false)
     expect(new InvoiceSession(girdi(), { isExport: true }).state.isExport).toBe(true)
+  })
+})
+
+describe('alan yolu', () => {
+  it('belge ve satır yollarını çözümler', () => {
+    expect(parseInvoicePath('type')).toEqual({ kind: 'document', field: 'type' })
+    expect(parseInvoicePath('lines[2].vatRate')).toEqual({
+      kind: 'line',
+      index: 2,
+      field: 'vatRate',
+    })
+    // `lines` bir belge alanıdır; köşeli ayraç yoksa satır yolu değildir.
+    expect(parseInvoicePath('lines')).toEqual({ kind: 'document', field: 'lines' })
+  })
+
+  it('tanınmayan biçimi reddeder', () => {
+    // Sessizce belge alanı saymak, yazım hatasını yeni bir alan gibi
+    // gösterir ve yamayı çöp alanla kirletirdi.
+    expect(parseInvoicePath('lines[a].vatRate')).toBeUndefined()
+    expect(parseInvoicePath('lines[0]')).toBeUndefined()
+    expect(parseInvoicePath('supplier.name')).toBeUndefined()
+    expect(parseInvoicePath('')).toBeUndefined()
+  })
+
+  it('satır yolunu üretir', () => {
+    expect(linePath(0, 'vatRate')).toBe('lines[0].vatRate')
+    expect(linePath(12, 'exemptionCode')).toBe('lines[12].exemptionCode')
+  })
+
+  it('yoldan değer okur', () => {
+    const oturum = new InvoiceSession(girdi())
+    expect(oturum.getPath('type')).toBe(InvoiceType.SATIS)
+    expect(oturum.getPath(linePath(0, 'vatRate'))).toBe(20)
+    expect(oturum.getPath(linePath(9, 'vatRate'))).toBeUndefined()
+  })
+
+  it('yolla belge alanını değiştirir', () => {
+    const oturum = new InvoiceSession(girdi())
+    oturum.setPath('currencyCode', 'USD')
+    expect(oturum.input.currencyCode).toBe('USD')
+  })
+
+  it('yolla satır alanını değiştirir', () => {
+    const oturum = new InvoiceSession(girdi())
+    oturum.setPath(linePath(0, 'vatRate'), 10)
+    expect(oturum.input.lines[0]?.vatRate).toBe(10)
+    // Toplamlar da yeniden hesaplanır.
+    expect(oturum.state.totals?.vatTotalAmount.units).toBe(10000n)
+  })
+
+  it('tanınmayan yolu reddeder', () => {
+    const oturum = new InvoiceSession(girdi())
+    expect(() => oturum.setPath('lines[a].x' as never, 1 as never)).toThrow(/Tanınmayan alan yolu/)
+  })
+
+  it('olmayan satırda hata verir', () => {
+    const oturum = new InvoiceSession(girdi())
+    expect(() => oturum.setPath(linePath(5, 'vatRate'), 10)).toThrow(/Satır 5 yok/)
+  })
+})
+
+describe('öneri farkı', () => {
+  it('eklenen, kaldırılan ve korunanı ayırır', () => {
+    const once = suggest(girdi())
+    const sonra = suggest({ ...girdi(), currencyCode: 'USD' })
+    const fark = diffSuggestions(once, sonra)
+    expect(fark.added.map((s) => s.id)).toContain('doviz/kur-zorunlu')
+    expect(fark.removed).toEqual([])
+  })
+
+  it('aynı küme için hepsini korunan sayar', () => {
+    const oneriler = suggest({ ...girdi(), currencyCode: 'USD' })
+    const fark = diffSuggestions(oneriler, oneriler)
+    expect(fark.added).toEqual([])
+    expect(fark.removed).toEqual([])
+    expect(fark.kept).toHaveLength(oneriler.length)
+  })
+
+  it('karşılanan öneriyi kaldırılan sayar', () => {
+    const once = suggest({ ...girdi(), currencyCode: 'USD' })
+    const sonra = suggest({
+      ...girdi(),
+      currencyCode: 'USD',
+      exchangeRate: { rate: 34.25 },
+    })
+    expect(diffSuggestions(once, sonra).removed.map((s) => s.id)).toContain('doviz/kur-zorunlu')
+  })
+
+  it('aynı kuralın farklı satırlardaki önerilerini ayrı sayar', () => {
+    // Anahtar kimlik VE yoldur: aynı kural iki satır için ateşlendiğinde
+    // bunlar ayrı önerilerdir, biri kaybolunca diğeri kalmalıdır.
+    const tesvik = { profile: InvoiceProfile.YATIRIM_TESVIK, type: InvoiceType.SATIS }
+    const iki = suggest({
+      ...girdi(),
+      ...tesvik,
+      lines: [
+        { name: 'a', quantity: 1, unitPrice: 100, vatRate: 20 },
+        { name: 'b', quantity: 1, unitPrice: 100, vatRate: 20 },
+      ],
+    })
+    const bir = suggest({
+      ...girdi(),
+      ...tesvik,
+      lines: [{ name: 'a', quantity: 1, unitPrice: 100, vatRate: 20 }],
+    })
+    const fark = diffSuggestions(iki, bir)
+    expect(fark.removed.some((s) => s.path.startsWith('lines[1]'))).toBe(true)
+    expect(fark.kept.some((s) => s.path.startsWith('lines[0]'))).toBe(true)
+  })
+})
+
+describe('profil-tip çözümü', () => {
+  it('uyan tipi korur', () => {
+    expect(resolveTypeForProfile(InvoiceType.SATIS, InvoiceProfile.TICARI)).toBe(InvoiceType.SATIS)
+  })
+
+  it('uymayan tipi profilin ilk tipine düşürür', () => {
+    // Ticari faturada IADE yoktur.
+    expect(resolveTypeForProfile(InvoiceType.IADE, InvoiceProfile.TICARI)).toBe(InvoiceType.SATIS)
+  })
+
+  it('tip verilmediğinde profilin ilk tipini seçer', () => {
+    expect(resolveTypeForProfile(undefined, InvoiceProfile.IHRACAT)).toBe(InvoiceType.ISTISNA)
+  })
+
+  it('mükellefiyeti hesaba katar', () => {
+    const tip = resolveTypeForProfile(InvoiceType.YTB_SATIS, InvoiceProfile.EARSIV, 'earchive')
+    expect(tip).toBe(InvoiceType.YTB_SATIS)
   })
 })

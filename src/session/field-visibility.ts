@@ -308,6 +308,39 @@ export const resolveProfileForType = (
 }
 
 /**
+ * Profil değiştiğinde fatura tipinin hâlâ geçerli olup olmadığını çözer.
+ *
+ * {@link resolveProfileForType}'ın aynası: kullanıcı formda profili
+ * değiştirdiğinde eldeki tip o profile uymayabilir. Uyuyorsa tip korunur;
+ * uymuyorsa profilin ilk izinli tipi seçilir.
+ *
+ * Tip korunmaya öncelik verilir, çünkü kullanıcı tipi bilinçli seçmiştir:
+ * profil çoğu zaman gönderim biçimine, tip ise satışın niteliğine aittir.
+ *
+ * @param currentType - Formdaki mevcut fatura tipi
+ * @param newProfile - Yeni seçilen profil
+ * @param liability - Alıcının mükellefiyet durumu
+ * @returns Korunan ya da önerilen fatura tipi
+ *
+ * @example
+ * ```ts
+ * // Uyuyorsa dokunulmaz
+ * resolveTypeForProfile(InvoiceType.SATIS, InvoiceProfile.TICARI) // 'SATIS'
+ * // Ticari faturada iade yok; profilin ilk tipine düşer
+ * resolveTypeForProfile(InvoiceType.IADE, InvoiceProfile.TICARI)  // 'SATIS'
+ * ```
+ */
+export const resolveTypeForProfile = (
+  currentType: InvoiceTypeCode | undefined,
+  newProfile: InvoiceProfileId,
+  liability?: CustomerLiability,
+): InvoiceTypeCode => {
+  const izinli = allowedTypesForProfile(newProfile, liability)
+  if (currentType !== undefined && izinli.includes(currentType)) return currentType
+  return izinli[0] ?? InvoiceType.SATIS
+}
+
+/**
  * Bir fatura tipinde kullanılabilen muafiyet kodlarını döndürür.
  *
  * Muafiyet tablosundaki her kodun hangi belge tipine ait olduğu bilinir;

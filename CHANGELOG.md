@@ -193,6 +193,24 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
     bir belgeyi reddetmek istemiyoruz. Liste arayüz seçim kutusu içindir
   - `availableBillingDocumentTypes` — iade atfında yazılabilecek belge tipi
     kodları
+- **Alan yolu API'si** (`InvoicePath`, `setPath`, `getPath`, `linePath`,
+  `parseInvoicePath`) — genel bir form bileşeni alanının yolunu bilir ama
+  tipini bilmez; bu çağrılar ikisini birleştirir ve değerin tipi
+  **derleme zamanında** denetlenir:
+  `setPath(linePath(0, 'vatRate'), 'yirmi')` derlenmez.
+  - Yol yazımı doğrulama bulgularınınkiyle aynıdır: bir bulgunun `path`
+    değeri doğrudan `getPath`/`setPath`'e verilebilir
+  - Yollar **tipten türer** — kod üretimi ve onu senkron tutan bir CI adımı
+    yoktur. Girdiye yeni alan eklendiğinde yol kümesi kendiliğinden genişler
+  - Tanınmayan biçim sessizce belge alanı sayılmaz; yazım hatası yamayı
+    çöp alanla kirletmez
+- **`diffSuggestions`** — iki öneri kümesi arasındaki fark (`added`,
+  `removed`, `kept`). Arayüz her tuş vuruşunda listeyi yeniden çizmek
+  yerine yalnızca değişeni vurgular. Anahtar kimlik **ve** yoldur: aynı
+  kural iki satır için ateşlendiğinde bunlar ayrı önerilerdir; gerekçe
+  metni anahtara girmez, düzeltilmesi öneriyi "yeni" göstermemelidir
+- **`resolveTypeForProfile`** — `resolveProfileForType`'ın aynası; profil
+  değiştiğinde uyan tipi korur, uymayanı profilin ilk tipine düşürür
 - **Kod tablosu genişletme** (`CodeTables`) — gömülü GİB kod listelerinin
   önüne geçen ek tanımlar; yeni kod eklenebilir, var olan tanım
   düzeltilebilir. GİB bir kod yayımladığında paket sürümü beklemek

@@ -33,6 +33,7 @@ import {
   type FieldVisibility,
   type LineFieldVisibility,
 } from './field-visibility.js'
+import { type InvoicePath, parseInvoicePath, type PathValue, readInvoicePath } from './path.js'
 import { suggest, type Suggestion, type SuggestionRule } from './suggestion.js'
 
 /** Bir nesnenin iç içe kısmi hâli. */
@@ -339,6 +340,54 @@ export class InvoiceSession {
    * oturum.patch({ supplier: { taxOffice: 'Kadıköy' } }) // diğer taraf alanları korunur
    * ```
    */
+  /**
+   * Tek bir alanı yoluyla okur.
+   *
+   * Yol yazımı doğrulama bulgularınınkiyle aynıdır: bir bulgunun `path`
+   * değeri doğrudan buraya verilebilir.
+   *
+   * @param path - Okunacak alanın yolu
+   * @returns Alanın değeri; satır yoksa `undefined`
+   *
+   * @example
+   * ```ts
+   * oturum.getPath('type')                     // 'SATIS'
+   * oturum.getPath(linePath(0, 'vatRate'))     // 20
+   * ```
+   */
+  getPath<P extends InvoicePath>(path: P): PathValue<P> | undefined {
+    return readInvoicePath(this.#input, path)
+  }
+
+  /**
+   * Tek bir alanı yoluyla değiştirir.
+   *
+   * Genel bir form bileşeni alanının yolunu bilir ama tipini bilmez; bu
+   * çağrı ikisini birleştirir ve değerin tipi **derleme zamanında**
+   * denetlenir: `setPath('lines[0].vatRate', 'yirmi')` derlenmez.
+   *
+   * @param path - Değiştirilecek alanın yolu
+   * @param value - Yeni değer
+   * @returns Güncellenmiş durum
+   * @throws {RangeError} Yol tanınmıyorsa ya da satır yoksa
+   *
+   * @example
+   * ```ts
+   * oturum.setPath('currencyCode', 'USD')
+   * oturum.setPath(linePath(0, 'vatRate'), 10)
+   * ```
+   */
+  setPath<P extends InvoicePath>(path: P, value: PathValue<P>): SessionState {
+    const cozum = parseInvoicePath(path)
+    if (cozum === undefined) throw new RangeError(`Tanınmayan alan yolu: "${path}".`)
+    if (cozum.kind === 'document') {
+      return this.patch({ [cozum.field]: value })
+    }
+    return this.setLine(cozum.index, {
+      [cozum.field]: value,
+    })
+  }
+
   patch(patch: DeepPartial<InvoiceInput>): SessionState {
     const previousInput = this.#input
     this.#input = merge(this.#input, patch)

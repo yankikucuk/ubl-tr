@@ -390,3 +390,53 @@ export const suggest = (
   rules: readonly SuggestionRule[] = SUGGESTION_RULES,
   tables?: CodeTables,
 ): readonly Suggestion[] => rules.flatMap((rule) => rule.run(input, tables))
+
+/** İki öneri kümesi arasındaki fark. */
+export interface SuggestionDiff {
+  /** Sonraki kümede olup öncekinde olmayan öneriler. */
+  readonly added: readonly Suggestion[]
+  /** Önceki kümede olup sonrakinde olmayan öneriler. */
+  readonly removed: readonly Suggestion[]
+  /** İkisinde de bulunan öneriler; sonraki kümedeki hâlleriyle. */
+  readonly kept: readonly Suggestion[]
+}
+
+/**
+ * Bir öneriyi kimliğinden ve yolundan tanımlar.
+ *
+ * Yalnızca kimlik yetmez: aynı kural birden çok satır için ateşlenebilir
+ * ve bunlar ayrı önerilerdir. Gerekçe metni anahtara **girmez** — metnin
+ * düzeltilmesi öneriyi "yeni" göstermemelidir.
+ */
+const suggestionKey = (s: Suggestion): string => `${s.id} ${s.path}`
+
+/**
+ * İki öneri kümesini karşılaştırır.
+ *
+ * Arayüzün yalnızca değişeni vurgulaması içindir: her yazı tuşunda tüm
+ * öneri listesini yeniden çizmek yerine, eklenen öneri belirir ve
+ * karşılanan öneri sönümlenerek kaybolur.
+ *
+ * @param before - Önceki öneriler
+ * @param after - Sonraki öneriler
+ * @returns Eklenen, kaldırılan ve korunan öneriler
+ *
+ * @example
+ * ```ts
+ * const once = suggest(girdi)
+ * const sonra = suggest({ ...girdi, currencyCode: 'USD' })
+ * diffSuggestions(once, sonra).added.map((s) => s.id) // ['doviz/kur-zorunlu']
+ * ```
+ */
+export const diffSuggestions = (
+  before: readonly Suggestion[],
+  after: readonly Suggestion[],
+): SuggestionDiff => {
+  const oncekiler = new Set(before.map(suggestionKey))
+  const sonrakiler = new Set(after.map(suggestionKey))
+  return {
+    added: after.filter((s) => !oncekiler.has(suggestionKey(s))),
+    removed: before.filter((s) => !sonrakiler.has(suggestionKey(s))),
+    kept: after.filter((s) => oncekiler.has(suggestionKey(s))),
+  }
+}

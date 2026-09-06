@@ -9,6 +9,7 @@ export {
   filterProfilesByLiability,
   filterTypesByLiability,
   resolveProfileForType,
+  resolveTypeForProfile,
   type FieldVisibility,
   type LineFieldVisibility,
   type VisibilityContext,
@@ -25,8 +26,20 @@ export {
   type SessionState,
 } from './invoice-session.js'
 export {
+  linePath,
+  parseInvoicePath,
+  readInvoicePath,
+  type DocumentPath,
+  type InvoicePath,
+  type LinePath,
+  type ParsedPath,
+  type PathValue,
+} from './path.js'
+export {
+  diffSuggestions,
   suggest,
   SUGGESTION_RULES,
+  type SuggestionDiff,
   type Suggestion,
   type SuggestionRule,
   type SuggestionSeverity,
