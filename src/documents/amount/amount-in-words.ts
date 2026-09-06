@@ -224,6 +224,52 @@ export const amountInWordsNote = (
 }
 
 /**
+ * Varsayılan etiketlerle başlayan notu tanıyan desen.
+ *
+ * Desen **başa bağlıdır**: metnin ortasında geçen "yalnız" kelimesi notu
+ * yazıyla tutar notu yapmaz. `#` ile başlayan biçim de kabul edilir.
+ */
+const NOTE_LABEL_PATTERN = /^#?\s*(YALNIZ|YAZIYLA)\b/u
+
+/**
+ * Karşılaştırma için metni büyük harfe çevirir.
+ *
+ * Türkçe yerel ayar kullanılır; not ile etiket aynı işlevden geçtiği için
+ * bu iki varsayılan etikette düz `toUpperCase` ile aynı sonucu verir, ama
+ * modülün geri kalanıyla tutarlı kalır ve `i` taşıyan özel etiketlerde
+ * doğru harfi üretir.
+ */
+const buyukHarf = (metin: string): string => metin.trimStart().toLocaleUpperCase('tr')
+
+/**
+ * Bir notun yazıyla tutar notu olup olmadığını söyler.
+ *
+ * Belge ayrıştırılırken kendiliğinden eklenmiş bu notu kullanıcının
+ * yazdığı notlardan ayırmak gerekir: aksi hâlde gidiş-dönüşte not iki kez
+ * yazılır. Uygulamada iki yaygın etiket vardır ve ikisi de tanınır.
+ *
+ * @param note - `cbc:Note` içeriği
+ * @param label - Notu üretirken kullanılan özel etiket; verilmezse iki
+ *   varsayılan etiket aranır
+ * @returns Yazıyla tutar notuysa `true`
+ *
+ * @example
+ * ```ts
+ * isAmountInWordsNote('YALNIZ #Bin İki Yüz Türk Lirası#')   // true
+ * isAmountInWordsNote('Yazıyla:#BİN İKİ YÜZ TÜRK LİRASI#')  // true
+ * isAmountInWordsNote('Sevkiyat 3 gün içinde yapılacak')     // false
+ *
+ * // Özel etiketle üretilmiş notu tanımak için etiket verilir:
+ * isAmountInWordsNote('Tutar Yazıyla#Bin Lira#', 'Tutar Yazıyla') // true
+ * ```
+ */
+export const isAmountInWordsNote = (note: string, label?: string): boolean => {
+  const metin = buyukHarf(note)
+  if (label !== undefined) return metin.startsWith(buyukHarf(label))
+  return NOTE_LABEL_PATTERN.test(metin)
+}
+
+/**
  * Tutarın ondalık gösterimini para biriminin basamak sayısıyla üretir.
  *
  * @param amount - Yazılacak tutar

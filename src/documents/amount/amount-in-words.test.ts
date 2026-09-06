@@ -4,6 +4,7 @@ import { decimal } from '../../core/index.js'
 
 import {
   amountInWords,
+  isAmountInWordsNote,
   amountInWordsNote,
   formatAmount,
   integerToWords,
@@ -131,5 +132,37 @@ describe('tutar biçimlendirme', () => {
     expect(formatAmount(d('1200'), 'TRY')).toBe('1200.00')
     expect(formatAmount(d('1200'), 'JPY')).toBe('1200')
     expect(formatAmount(d('1.5'), 'KWD')).toBe('1.500')
+  })
+})
+
+describe('yazıyla tutar notunu tanıma', () => {
+  it('kendi ürettiği notu tanır', () => {
+    expect(isAmountInWordsNote(amountInWordsNote(decimal('1200.00')))).toBe(true)
+  })
+
+  it('diğer yaygın etiketi de tanır', () => {
+    expect(
+      isAmountInWordsNote(amountInWordsNote(decimal('1200.00'), 'TRY', { label: 'YAZIYLA:' })),
+    ).toBe(true)
+  })
+
+  it('küçük harfli ve Türkçe karakterli etiketi tanır', () => {
+    expect(isAmountInWordsNote('Yazıyla:#BİN İKİ YÜZ TÜRK LİRASI#')).toBe(true)
+    expect(isAmountInWordsNote('yalnız #Bin İki Yüz Türk Lirası#')).toBe(true)
+  })
+
+  it('özel etiketle üretilmiş notu etiket verilerek tanır', () => {
+    const not = amountInWordsNote(decimal('1200.00'), 'TRY', { label: 'Tutar Yazıyla' })
+    // Etiket verilmeden varsayılan desenle tanınmaz.
+    expect(isAmountInWordsNote(not)).toBe(false)
+    expect(isAmountInWordsNote(not, 'Tutar Yazıyla')).toBe(true)
+    expect(isAmountInWordsNote(not, 'Başka Etiket')).toBe(false)
+  })
+
+  it('kullanıcının yazdığı notu tanımaz', () => {
+    expect(isAmountInWordsNote('Sevkiyat 3 gün içinde yapılacak')).toBe(false)
+    expect(isAmountInWordsNote('')).toBe(false)
+    // Etiketle başlamayan, içinde geçen metin de not sayılmaz.
+    expect(isAmountInWordsNote('Tutar YALNIZ nakit ödenir')).toBe(false)
   })
 })

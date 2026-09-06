@@ -1,6 +1,7 @@
 export {
   amountInWords,
   amountInWordsNote,
+  isAmountInWordsNote,
   formatAmount,
   integerToWords,
   type AmountInWordsNoteOptions,

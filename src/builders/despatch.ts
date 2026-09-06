@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CURRENCY_CODE,
   DEFAULT_UNIT_CODE,
   type DespatchProfileId,
   type DespatchTypeCode,
@@ -16,6 +17,7 @@ import {
   optionalContainer,
   optionalLeaf,
   serializeDocument,
+  toStringValue,
   toStringValueRange,
   type XmlElement,
 } from '../core/index.js'
@@ -119,6 +121,18 @@ export interface ShipmentInput {
   readonly licensePlates?: readonly LicensePlateInput[]
   /** Taşıma ekipmanları. */
   readonly transportEquipment?: readonly TransportEquipmentInput[]
+  /**
+   * Sevk edilen malın değeri — `cac:GoodsItem/cbc:ValueAmount`.
+   *
+   * İrsaliye tutar taşımaz; bu alan sigorta ve gümrük işlemleri için
+   * malın beyan değerini bildirir.
+   */
+  readonly goodsValue?: {
+    /** Değer. */
+    readonly amount: NumericInput
+    /** ISO 4217 kodu; varsayılan `TRY`. */
+    readonly currencyCode?: string
+  }
   /**
    * Taşıma birimleri — tam biçim.
    *
@@ -256,7 +270,18 @@ const buildTransportHandlingUnit = (birim: TransportHandlingUnitInput): XmlEleme
 const buildShipment = (shipment: ShipmentInput, bosGoodsItem: boolean): XmlElement =>
   container(CAC, 'Shipment', [
     leaf(CBC, 'ID', shipment.id ?? '1'),
-    bosGoodsItem ? container(CAC, 'GoodsItem', []) : undefined,
+    shipment.goodsValue === undefined
+      ? bosGoodsItem
+        ? container(CAC, 'GoodsItem', [])
+        : undefined
+      : container(CAC, 'GoodsItem', [
+          leaf(CBC, 'ValueAmount', toStringValue(asDecimal(shipment.goodsValue.amount), 2), [
+            {
+              name: 'currencyID',
+              value: shipment.goodsValue.currencyCode ?? DEFAULT_CURRENCY_CODE,
+            },
+          ]),
+        ]),
     optionalContainer(CAC, 'ShipmentStage', [
       optionalContainer(CAC, 'TransportMeans', [
         optionalContainer(

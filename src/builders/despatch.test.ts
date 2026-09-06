@@ -309,3 +309,25 @@ describe('taşıma birimi ve kap bilgisi', () => {
     expect(xml.indexOf('E-1')).toBeLessThan(xml.indexOf('TB-2'))
   })
 })
+
+describe('sevk edilen malın değeri', () => {
+  it('değeri para birimiyle GoodsItem içine yazar', () => {
+    const xml = buildDespatchAdviceXml(girdi({ shipment: { goodsValue: { amount: 15000 } } }))
+    expect(xml).toContain(
+      '<cac:GoodsItem><cbc:ValueAmount currencyID="TRY">15000.00</cbc:ValueAmount></cac:GoodsItem>',
+    )
+  })
+
+  it('para birimi verilebilir', () => {
+    const xml = buildDespatchAdviceXml(
+      girdi({ shipment: { goodsValue: { amount: 1000, currencyCode: 'USD' } } }),
+    )
+    expect(xml).toContain('<cbc:ValueAmount currencyID="USD">1000.00</cbc:ValueAmount>')
+  })
+
+  it('değer verilmediğinde boş GoodsItem yazılmayı sürdürür', () => {
+    // GİB'in e-İrsaliye paketine karşı doğrulanan üretimlerde boş öğe
+    // yazılıyor; eski davranış korunur.
+    expect(buildDespatchAdviceXml(girdi())).toContain('<cac:GoodsItem></cac:GoodsItem>')
+  })
+})

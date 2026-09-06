@@ -134,6 +134,7 @@ export {
 export {
   amountInWords,
   amountInWordsNote,
+  isAmountInWordsNote,
   assertValidDocumentNumber,
   assertValidTaxIdentifier,
   calculateInvoice,

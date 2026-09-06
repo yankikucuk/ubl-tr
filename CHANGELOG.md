@@ -228,6 +228,14 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
     **önüne** yazılır
   - `eArchiveDocuments` ve `onlineSaleDelivery` ayrıca dışa aktarılır:
     eşlemenin ne ürettiği görülebilir, elle de kullanılabilir
+- **`isAmountInWordsNote`** — bir notun kendiliğinden eklenmiş yazıyla
+  tutar notu olup olmadığını söyler. Belge ayrıştırılırken bu notu
+  kullanıcının notlarından ayırmak gerekir; aksi hâlde gidiş-dönüşte iki
+  kez yazılır. İki yaygın etiketi tanır, özel etiket ikinci parametreyle
+  verilebilir
+- **`shipment.goodsValue`** — e-İrsaliyede sevk edilen malın beyan değeri
+  (`cac:GoodsItem/cbc:ValueAmount`); sigorta ve gümrük işlemleri için.
+  Verilmediğinde boş `cac:GoodsItem` yazılmayı sürdürür
 - **Kod tablosu genişletme** (`CodeTables`) — gömülü GİB kod listelerinin
   önüne geçen ek tanımlar; yeni kod eklenebilir, var olan tanım
   düzeltilebilir. GİB bir kod yayımladığında paket sürümü beklemek
