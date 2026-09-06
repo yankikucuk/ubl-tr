@@ -1,8 +1,10 @@
 # @yankikucuk/ubl-tr
 
-> **Durum: 0.1.0 — erken sürüm.** e-Fatura ve e-İrsaliye üretimi, okuma,
-> doğrulama, XML katmanı (her iki yön), tutar aritmetiği ve kimlik
-> doğrulama hazır. Public API 1.0'a kadar değişebilir.
+> **Durum: 1.0.0 — kararlı.** e-Fatura ve e-İrsaliye üretimi, okuma,
+> doğrulama, XML katmanı (her iki yön), tutar aritmetiği, kimlik doğrulama
+> ve etkileşimli oturum hazır. Public API kararlıdır; kırıcı değişiklik
+> ana sürüm yükseltir. Kapsam dışı belge türleri (`CreditNote`,
+> `ReceiptAdvice`, `ApplicationResponse`) henüz üretilmiyor.
 
 Gelir İdaresi Başkanlığı'nın **UBL-TR 1.2.1** e-belge standardı için sıfır
 bağımlılıklı bir TypeScript kütüphanesi: belge üretimi, ayrıştırma ve

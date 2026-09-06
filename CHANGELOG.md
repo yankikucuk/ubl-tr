@@ -3,7 +3,7 @@
 Bu proje [Semantic Versioning](https://semver.org/lang/tr/) kullanır.
 Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
 
-## [0.1.0] — 2026-09-06
+## [1.0.0] — 2026-09-06
 
 ### Eklendi
 
@@ -317,4 +317,4 @@ karakterden uzun base64 içerik `"#base64encoded"` ile değiştiriliyor
 (kapatılamıyor), ve `removeNSPrefix` ad alanlarını silerek `cbc:ID` ile
 `cac:ID` öğelerini ayırt edilemez hâle getiriyor.
 
-[0.1.0]: https://github.com/yankikucuk/ubl-tr/releases/tag/v0.1.0
+[1.0.0]: https://github.com/yankikucuk/ubl-tr/releases/tag/v1.0.0

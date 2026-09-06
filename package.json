@@ -1,6 +1,6 @@
 {
   "name": "@yankikucuk/ubl-tr",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "UBL-TR 1.2.1 e-belge katmanı için sıfır bağımlılıklı TypeScript kütüphanesi — belge üretimi, ayrıştırma ve doğrulama",
   "keywords": [
     "ubl",

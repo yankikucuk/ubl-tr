@@ -42,9 +42,17 @@ jobs:
           echo "etiket=$tag package.json=$pkg"
           [ "$tag" = "$pkg" ] || { echo "HATA: sürümler uyuşmuyor"; exit 1; }
 
-      - run: npm publish --provenance --access public
+      # Kimlik açıkça proje `.npmrc`sine yazılır. `setup-node`un yazdığı
+      # kullanıcı yapılandırmasına güvenmek kırılgan: npm sürümü yükseltilince
+      # (aşağıdaki `npm i -g npm@11`) belirteç okunamayıp ENEEDAUTH veriyor.
+      # Proje `.npmrc`si dosya öncelik sırasında en üsttedir ve npm onu
+      # yayınlanan pakete hiçbir zaman koymaz.
+      - name: npm kimliğini yapılandır
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: printf '\n//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" >> .npmrc
+
+      - run: npm publish --provenance --access public
 
       - name: GitHub sürümü oluştur
         env:
