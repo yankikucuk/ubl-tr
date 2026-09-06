@@ -84,7 +84,8 @@ jobs:
           gh api "repos/$REPO/labels?per_page=100" --paginate > /tmp/current.json
 
           python3 - <<'PY' > /tmp/plan.sh
-          import json, shlex, pathlib
+          import json, os, shlex, pathlib
+          prune = os.environ.get('PRUNE') == 'true'
           desired = json.loads(pathlib.Path('/tmp/desired.json').read_text())
           current = {l['name']: l for l in json.loads(pathlib.Path('/tmp/current.json').read_text())}
           want = {d['name'] for d in desired}
@@ -96,13 +97,21 @@ jobs:
                   out.append(f"gh label create {shlex.quote(name)} --color {shlex.quote(color)} --description {shlex.quote(desc)}")
               elif c.get('color') != color or (c.get('description') or '') != desc:
                   out.append(f"gh label edit {shlex.quote(name)} --color {shlex.quote(color)} --description {shlex.quote(desc)}")
-          silinecek = [n for n in current if n not in want]
+          silinecek = [n for n in current if n not in want] if prune else []
           # İkinci güvenlik ağı: tek seferde mevcut etiketlerin yarısından
           # fazlasını silmek neredeyse her zaman bir yapılandırma hatasıdır,
           # kasıtlı bir temizlik değil.
-          if current and len(silinecek) > len(current) / 2:
+          #
+          # Koruma YALNIZCA prune açıkken uygulanır. Aksi hâlde silme zaten
+          # yapılmayacakken plan üretimi düşer ve `prune: false` ile kaçış
+          # kapağı işe yaramaz. Bu, yeni bir depoda ilk çalıştırmada canlı
+          # olarak görüldü: GitHub'ın 10 varsayılan etiketi listede olmadığı
+          # için oran %100 çıkıyor ve iş akışı hiç ilerlemiyor.
+          if prune and current and len(silinecek) > len(current) / 2:
               import sys
               print(f'HATA: {len(silinecek)}/{len(current)} etiket silinecekti, durduruldu.', file=sys.stderr)
+              print('Kasıtlıysa iş akışını `prune: true` ile elle çalıştırın; ilk kurulumda',
+                    'önce `prune: false` ile etiketleri oluşturun.', file=sys.stderr)
               sys.exit(1)
           for name in silinecek:
               out.append(f"PRUNE gh label delete {shlex.quote(name)} --yes")
