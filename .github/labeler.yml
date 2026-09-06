@@ -1,0 +1,56 @@
+# Pull request'lere değişen dosya yollarına göre otomatik etiket atar.
+# .github/workflows/labeler.yml tarafından çalıştırılır (actions/labeler).
+#
+# Buradaki her etiket labels.yml içinde TANIMLI OLMALIDIR; tanımsız bir
+# etiket ataması sessizce başarısız olur.
+
+'alan: sabitler':
+  - changed-files:
+      - any-glob-to-any-file: 'src/constants/**'
+
+'alan: çekirdek':
+  - changed-files:
+      - any-glob-to-any-file: 'src/core/**'
+
+'alan: şema':
+  - changed-files:
+      - any-glob-to-any-file: 'src/documents/**'
+
+'alan: üretim':
+  - changed-files:
+      - any-glob-to-any-file: 'src/builders/**'
+
+'alan: ayrıştırma':
+  - changed-files:
+      - any-glob-to-any-file: 'src/parsers/**'
+
+'alan: doğrulama':
+  - changed-files:
+      - any-glob-to-any-file: 'src/validators/**'
+
+'tür: test':
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.test.ts'
+          - 'tests/**'
+          - 'vitest.config.ts'
+
+'tür: dokümantasyon':
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - 'docs/**'
+          - 'examples/**'
+
+'tür: bakım':
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'package.json'
+          - 'package-lock.json'
+          - 'tsconfig*.json'
+          - 'tsup.config.ts'
+          - 'eslint.config.js'
+          - 'knip.json'
+          - '.prettierrc.json'
+          - '.editorconfig'

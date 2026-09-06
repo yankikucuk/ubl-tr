@@ -1,0 +1,144 @@
+# Değişiklik Günlüğü
+
+Bu proje [Semantic Versioning](https://semver.org/lang/tr/) kullanır.
+Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
+
+## [0.1.0] — 2026-09-06
+
+### Eklendi
+
+- Depo iskeleti: TypeScript araç zinciri, katmanlı ESLint yapılandırması,
+  CI, CodeQL, bağımlılık incelemesi, etiket senkronizasyonu ve yayın
+  iş akışları
+- UBL-TR ad alanı URI'leri, belge tipi kodları ve profil kimlikleri
+- **Çekirdek XML katmanı** — deterministik, ad alanı doğru, C14N uyumlu
+  serileştirici:
+  - `leaf` / `container` / `optionalLeaf` / `optionalContainer` öğe
+    kurucuları; karışık içerik tip düzeyinde imkânsız
+  - `serializeDocument` — ön ekler kök öğede toplanır, bildirilmemiş ad
+    alanı hata verir, varsayılan çıktı boşluksuz
+  - Kanonik XML (C14N 1.0 §2.3) kaçış kuralları; kaçırmayı serileştirici
+    yapar, çağıran unutamaz
+  - XML 1.0 §2.2 karakter kümesi denetimi; kontrol karakteri sessizce
+    geçirilmez, konumuyla birlikte hata verilir
+
+- **Kimlik doğrulama katmanı**:
+  - `isValidVkn` / `isValidTckn` / `detectTaxIdentifierKind` /
+    `assertValidTaxIdentifier` — kontrol basamağı doğrulaması. İki bağımsız
+    uygulamaya karşı 200.000 örnekte doğrulandı, sıfır uyuşmazlık.
+    Algoritmaların ölçülmüş sınırı JSDoc'ta ve testlerde sabitlendi.
+  - `parseDocumentNumber` / `isValidDocumentNumber` /
+    `assertValidDocumentNumber` — 16 haneli UBL-TR belge numarası; isteğe
+    bağlı düzenleme tarihi çapraz denetimi.
+
+- **XML ayrıştırıcı** (`parseDocument`) — sıfır bağımlılıklı, ad alanı
+  farkında. DTD tümden reddedilir; derinlik ve boyut sınırları uygulanır;
+  CDATA, yorum, işlem talimatı ve sayısal başvurular desteklenir; karışık
+  içerik reddedilir; hiçbir değerin türü tahmin edilmez.
+- **JSON köprüsü** (`xmlToJson`, `jsonToXml`, `toJson`, `fromJson`) —
+  kayıpsız gidiş-dönüş. `xml → json → xml` bayt bayt aynı; alt öğeler her
+  zaman dizi; ön ekli öznitelikler James Clark gösterimiyle korunur.
+
+- **Tam sayı ondalık aritmetiği** (`Decimal`) — tutarlar `bigint` üzerinde
+  sabit noktalı taşınır, kayan nokta hiç kullanılmaz. Yuvarlama sıfırdan
+  uzağa yarım yukarıdır; `Math.round` negatif tutarlarda yanlış yönde
+  yuvarlar. Çarpım tam kalır, yuvarlama yalnızca tutara yazılırken yapılır.
+- **Para birimi tablosu** — ISO 4217 ondalık basamak sayısı, Türkçe ad ve
+  alt birim adı. Yenin ondalığı yoktur, dinar üç basamaklıdır, "kuruş"
+  yalnızca Türk lirasının alt birimidir.
+- **Yazıyla tutar** (`amountInWords`, `amountInWordsNote`) — Türkçe sayı
+  yazımı, para birimi farkındalığı ve `toLocaleUpperCase('tr')`.
+
+- **Vokabüler** — 12 fatura profili, 20 fatura tipi ve aralarındaki izin
+  matrisi; 52 KDV tevkifatı kodu ve oranı; 30 vergi türü; 77 ölçü birimi;
+  13 para birimi.
+- **Toplam motoru** (`calculateInvoice`) — satır hesabı, orana göre gruplanmış
+  KDV alt toplamları, tevkifat, iskonto, KDV matrahını değiştiren ek vergiler.
+  Hesaplama boyunca hiç yuvarlanmaz; yuvarlama yalnızca XML'e yazılırken.
+- **Fatura üreticisi** (`buildInvoice`, `buildInvoiceXml`) — UBL `xsd:sequence`
+  sırasına uyan tam belge; imza zarfı, imza bloğu, iade atfı ve yazıyla tutar
+  notu dâhil. Toplamlar çağırandan alınmaz, hesaplanır.
+
+- **e-İrsaliye üreticisi** (`buildDespatchAdvice`, `buildDespatchAdviceXml`)
+  — `DespatchAdvice` kök öğesi ve kendi ad alanı; sevkiyat, çoklu sürücü,
+  çekici ve dorse plakası, taşıyıcı firma, taşıma ekipmanı, teslim adresi,
+  matbu irsaliyeden dönüş ve kalem ek tanımlayıcıları.
+- **Ayrıştırıcı katmanı** (`parseInvoice`, `parseDespatchAdvice`) — XML'den
+  tipli belge nesnesine. Okuma tipi yazma tipinden ayrıdır; ayrıştırma
+  hoşgörülüdür ve hiçbir değerin türü tahmin edilmez.
+- **Yapısal doğrulama** (`validateStructure`) — UBL `xsd:sequence` sırası,
+  zorunluluk ve tekrar sınırları; 60 öğe tipi modellendi.
+- **İş kuralı doğrulaması** (`validateInvoiceRules`) — belge numarası biçimi
+  ve yılı, profil-tip eşleşmesi, iade atfı, muafiyet kodu, kod listeleri,
+  tevkifat kodu-oran çifti, tutar tutarlılığı, ondalık basamak sınırı, HKS
+  künye numarası, vergi numarası kontrol basamağı (uyarı).
+- **Senaryo kapsamı** — 37 senaryonun (33 fatura + 4 e-İrsaliye) tamamında
+  hem tutarlar hem belge yapısı referansla birebir örtüşüyor:
+  - 103 KDV istisna/muafiyet kodu ve açıklaması
+  - kalem ek tanımlayıcıları (HKS künye no, ilaç takip no, İDİS)
+  - iskonto çarpanı, iade atfında belge tipi
+  - sipariş ve sözleşme atıfları, genel belge atıfları, muhasebe kodu
+  - ödeme bilgisi (şekil, vade, IBAN, açıklama) ve döviz kuru
+  - aracı alıcı, ek taraf tanımlayıcıları, ticaret unvanı, uyruk ve
+    kimlik belgesi, KDV iade aracısı
+  - teslim: adres, Incoterms, GTİP, gümrük beyannamesi ve düzenleyeni,
+    fiili teslim tarihi, taşıyıcı
+  - kalem ayrıntıları: marka, model, sınıflandırma kodu, ürün takip ve
+    seri numarası
+  - fatura dönemi
+
+### Neden bu tasarım
+
+Yaygın üç UBL-TR paketi kaynak düzeyinde incelendi ve üç davranış canlı
+olarak doğrulandı; her biri burada yapısal olarak imkânsız kılındı ve bir
+regresyon testiyle sabitlendi:
+
+- Ad alanı ön eklerinin kökte bildirilip hiç kullanılmaması — tüm öğelerin
+  yanlış ad alanına düşmesi
+- Kaçırmanın çağıranın sorumluluğunda olması ve geçersiz XML karakterinin
+  sessizce çıktıya geçmesi
+- Girintili çıktının varsayılan olması — imzalanacak belgede boşluk metin
+  düğümleri
+
+Ayrıca ekosistemde açık duran iki gerçek soruna karşılık gelen doğrulamalar
+eklendi:
+
+- Kök `cbc:ID` alanına 16 haneli belge numarası yerine kısa bir sıra kodu
+  yazılması (odoo/odoo#270638) — `assertValidDocumentNumber` yakalar
+- "Şema geçerli ama GİB kabul eder mi" boşluğu (gorkem-bwl/atlas#39) —
+  XSD'de tanımlı olmayan kılavuz kurallarının doğrulanması bu yönde ilk adım
+
+Kontrol basamağı doğrulamasını incelenen üç paketin hiçbiri yapmıyordu.
+
+Referans senaryolara karşı çalıştırma kendi kodumuzda üç hata ortaya
+çıkardı; üçü de düzeltildi ve regresyon testine bağlandı:
+
+- **Stopaj toplamdan düşmüyordu.** %23 gelir stopajlı 15.000 TL'lik faturada
+  ödenecek tutar 14.550 yerine 21.450 çıkıyordu.
+- **`TaxExclusiveAmount` şişiyordu.** ÖTV vergi _hariç_ toplama ekleniyordu;
+  400 yerine 600.
+- **`cbc:WebsiteURI` yanlış sıradaydı.** UBL `cac:Party` sequence'ında ilk
+  öğedir; sona yazmak belgeyi şema dışı bırakır.
+- **`cac:IssuerParty` fazladan sarmalanıyordu.** UBL'de `IssuerParty`,
+  `SignatoryParty` ve `CarrierParty` birer `PartyType`'tır: içerikleri
+  doğrudan taraf alanlarıdır, ayrıca `cac:Party` ile sarmalanmaz.
+
+Sayısal katmanda düzeltilen, canlı doğrulanmış hatalar:
+
+- `1,999 TL` için "Bir Türk Lirası **Yüz Kuruş**" — önce ayırıp sonra
+  yuvarlamanın sonucu; yüz kuruş diye bir şey yoktur
+- `0,50 TL` için "Sıfır Türk Lirası" — ana birim sıfırken kuruşun düşmesi
+- `100,25 USD` için "…Yirmi Beş **Kuruş**" ve `0,50 USD` için "Sıfır
+  **Türk Lirası**" — para biriminin göz ardı edilmesi
+- Her faturada "TÜRK **LIRASI**" — `toUpperCase()` Türkçede noktasız I
+  üretir; doğrusu `toLocaleUpperCase('tr')` ile "LİRASI"dır
+- `(1.005).toFixed(2) === "1.00"` ve `(1e21).toFixed(2) === "1e+21"` —
+  kayan nokta tabanlı tutar yazımının iki bilinen sonucu
+
+XML→JSON yönünde incelenen dönüştürücünün üç veri kaybı da burada yok:
+`ext:UBLExtensions` ve `cac:Signature` sabit listeyle siliniyor, 1000
+karakterden uzun base64 içerik `"#base64encoded"` ile değiştiriliyor
+(kapatılamıyor), ve `removeNSPrefix` ad alanlarını silerek `cbc:ID` ile
+`cac:ID` öğelerini ayırt edilemez hâle getiriyor.
+
+[0.1.0]: https://github.com/yankikucuk/ubl-tr/releases/tag/v0.1.0

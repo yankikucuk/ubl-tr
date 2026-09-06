@@ -1,0 +1,37 @@
+# Bağımlılıklar
+node_modules/
+
+# Derleme çıktısı
+dist/
+*.tsbuildinfo
+
+# Test ve kapsam
+coverage/
+.vitest/
+
+# npm pack çıktısı
+*.tgz
+
+# Günlükler
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Gerçek mükellef belgeleri. Bu depoda YALNIZCA anonimleştirilmiş ya da
+# GİB'in kendi yayımladığı örnek belgeler bulunabilir; canlı bir belge
+# yanlışlıkla çalışma dizinine düşerse commit edilmemeli.
+*.local.xml
+fixtures/private/
+
+# Ortam değişkenleri
+.env
+.env.*
+!.env.example
+
+# Editör ve işletim sistemi
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp

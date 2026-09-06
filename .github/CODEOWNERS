@@ -1,0 +1,27 @@
+# Bu dosya, hangi dosyalar için kimin inceleme yapacağını belirler.
+# Bir pull request açıldığında GitHub, değişen yollara göre buradaki
+# sahipleri otomatik olarak reviewer atar.
+# Sözdizimi: <yol deseni> <sahipler>
+
+# Varsayılan: her şey depo sahibine
+*                                   @yankikucuk
+
+# Mimari sınırları ve araç zinciri — değişimi tüm katmanları etkiler
+/eslint.config.js                   @yankikucuk
+/tsconfig.json                      @yankikucuk
+/tsup.config.ts                     @yankikucuk
+/vitest.config.ts                   @yankikucuk
+/knip.json                          @yankikucuk
+/.github/                           @yankikucuk
+
+# GİB'in wire değerleri — ad alanı URI'si veya profil kimliğindeki bir
+# harflik hata, belgenin reddedilmesidir; hiçbir tip kontrolü yakalamaz
+/src/constants/                     @yankikucuk
+
+# Güvenli ayrıştırma sınırları — XXE, varlık genişletme, derinlik.
+# Buradaki bir gevşetme doğrudan güvenlik açığıdır
+/src/core/                          @yankikucuk
+/src/parsers/                       @yankikucuk
+
+# Doğrulama kuralları — yanlışı geçersiz belgeyi geçerli sayar
+/src/validators/                    @yankikucuk

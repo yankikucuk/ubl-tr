@@ -1,0 +1,57 @@
+name: Belge uyumsuzluğu
+description: Üretilen belge reddedildi ya da geçerli bir belge ayrıştırılamıyor
+labels: ['alan: mevzuat-uyumu', 'öncelik: yüksek']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bu şablon, kütüphanenin ürettiği XML'i **karşı tarafın kabul
+        etmediği** ya da geçerli bir belgeyi **okuyamadığımız** durumlar
+        için. Mevzuat ve şemalar değişiyor; kütüphane onlarla birlikte
+        güncellenmelidir.
+
+        **Gerçek bir mükellefe ait belge yapıştırmayın.** VKN, TCKN, ünvan
+        ve tutarları değiştirin — sorunu yaratan neredeyse her zaman
+        **yapı**dır, değerler değil.
+  - type: dropdown
+    id: yon
+    attributes:
+      label: Hangi yön
+      options:
+        - Ürettiğimiz belge reddedildi
+        - Geçerli bir belgeyi ayrıştıramıyoruz
+        - Doğrulayıcı yanlış sonuç veriyor
+    validations: { required: true }
+  - type: dropdown
+    id: belge
+    attributes:
+      label: Belge tipi
+      options:
+        - e-Fatura
+        - e-Arşiv Fatura
+        - e-İrsaliye
+        - İrsaliye yanıtı
+        - e-Serbest Meslek Makbuzu
+        - e-Müstahsil Makbuzu
+        - Uygulama yanıtı (ApplicationResponse)
+    validations: { required: true }
+  - type: textarea
+    id: xml
+    attributes:
+      label: İlgili XML parçası
+      description: |
+        Sorunun geçtiği bölüm — tüm belge değil. Ad alanı bildirimlerini
+        bırakın, öğe ADLARI kritik.
+      render: xml
+    validations: { required: true }
+  - type: textarea
+    id: hata
+    attributes:
+      label: Karşı tarafın hata mesajı
+      description: GİB, entegratör ya da doğrulayıcı ne dedi.
+  - type: input
+    id: kilavuz
+    attributes:
+      label: İlgili kılavuz ve sürümü
+      description: Biliyorsanız hangi kılavuzun hangi bölümü.
+      placeholder: 'UBL-TR Kılavuzu 1.2.1, bölüm 4.3'

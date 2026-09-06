@@ -1,0 +1,132 @@
+{
+  "name": "@yankikucuk/ubl-tr",
+  "version": "0.1.0",
+  "description": "UBL-TR 1.2.1 e-belge katmanı için sıfır bağımlılıklı TypeScript kütüphanesi — belge üretimi, ayrıştırma ve doğrulama",
+  "keywords": [
+    "ubl",
+    "ubl-tr",
+    "ubltr",
+    "ubl-2.1",
+    "e-belge",
+    "ebelge",
+    "gib",
+    "e-fatura",
+    "efatura",
+    "e-arsiv",
+    "e-arşiv",
+    "earsiv",
+    "e-irsaliye",
+    "eirsaliye",
+    "irsaliye",
+    "despatch-advice",
+    "e-smm",
+    "serbest-meslek-makbuzu",
+    "e-mustahsil",
+    "mustahsil-makbuzu",
+    "fatura",
+    "invoice",
+    "e-invoice",
+    "einvoice",
+    "credit-note",
+    "xml",
+    "schematron",
+    "turkey",
+    "turkish",
+    "vergi",
+    "kdv",
+    "tevkifat",
+    "nodejs",
+    "ubl-parser",
+    "ubl-builder",
+    "xml-to-json",
+    "json-to-xml",
+    "e-belge-dogrulama",
+    "despatch"
+  ],
+  "license": "MIT",
+  "author": "Yankı Küçük",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yankikucuk/ubl-tr.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yankikucuk/ubl-tr/issues"
+  },
+  "homepage": "https://github.com/yankikucuk/ubl-tr#readme",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "knip": "knip",
+    "check:publish": "publint",
+    "check:types": "attw --pack .",
+    "prepublishOnly": "npm run build",
+    "prepare": "simple-git-hooks >/dev/null 2>&1 || true"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "10.9.1",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import-x": "4.17.1",
+    "knip": "6.34.0",
+    "lint-staged": "17.4.1",
+    "prettier": "3.9.6",
+    "publint": "0.3.24",
+    "simple-git-hooks": "2.14.0",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "^4.1.11"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npx lint-staged"
+  },
+  "lint-staged": {
+    "*.{ts,js,json,md,yml}": "prettier --write",
+    "*.ts": "eslint --fix"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  }
+}
