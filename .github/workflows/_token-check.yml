@@ -1,0 +1,17 @@
+# Geçici tanı: NPM_TOKEN secret'ının uzunluğunu ve önekini bildirir.
+# Değerin kendisi YAZILMAZ. Tanı biter bitmez bu dosya silinir.
+name: Belirteç tanısı
+
+on: workflow_dispatch
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Secret dolu mu
+        env:
+          T: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "uzunluk: ${#T}"
+          echo "önek: ${T:0:4}"
+          if [ -z "$T" ]; then echo "SONUÇ: secret BOŞ"; else echo "SONUÇ: secret dolu"; fi
