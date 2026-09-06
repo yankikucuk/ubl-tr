@@ -143,6 +143,19 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
     (`cbc:EmbeddedDocumentBinaryObject`, `mimeCode` ve `filename`
     öznitelikleriyle) ve/veya dış adres (`cac:ExternalReference`). İkisi de
     boşsa öğe hiç yazılmaz — boş `cac:Attachment` belgeyi geçersiz kılar
+- **İskonto ve ek yük** (`AllowanceChargeInput`) — hem satır hem belge
+  düzeyinde, `cbc:ChargeIndicator` ile indirim ve masraf ayrımı, gerekçe
+  kodu ve açıklaması, çarpan ve baz tutar:
+  - **Satır düzeyinde** tutar `cbc:LineExtensionAmount`'a girer, dolayısıyla
+    KDV matrahını da değiştirir; satırın tek oranı olduğu için iyi tanımlıdır
+  - **Belge düzeyinde** tutar vergiden SONRA `cbc:PayableAmount`'a uygulanır,
+    KDV yeniden hesaplanmaz. Satırlar farklı oran taşıyabildiğinden belge
+    düzeyinde bir iskontonun hangi oranı azaltacağı tanımsızdır; bu tercih
+    belgelendi
+  - `cbc:ChargeTotalAmount` — yük yoksa öğe hiç yazılmaz, böylece yükü
+    olmayan belgelerin çıktısı değişmez
+  - Çarpan yüzde olarak verilir ve kesre çevrilir (10 → 0,1); satır
+    iskontosundaki `discountRate` ile aynı sözleşme
 - **Kod tablosu genişletme** (`CodeTables`) — gömülü GİB kod listelerinin
   önüne geçen ek tanımlar; yeni kod eklenebilir, var olan tanım
   düzeltilebilir. GİB bir kod yayımladığında paket sürümü beklemek

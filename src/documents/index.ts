@@ -18,6 +18,7 @@ export {
   lineUnitCode,
   type CalculatedInvoice,
   type AdditionalItemIdentificationInput,
+  type AllowanceChargeInput,
   type CalculatedLine,
   type InvoiceLineInput,
   type InvoiceTotalsInput,

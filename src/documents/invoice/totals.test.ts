@@ -328,3 +328,92 @@ describe('ek vergilerin toplama etkisi', () => {
     expect(f(t.vatTotalAmount)).toBe('180.00')
   })
 })
+
+describe('iskonto ve ek yük', () => {
+  const satir = { name: 'Ürün', quantity: 10, unitPrice: 100, vatRate: 20 }
+
+  it('satır iskontosu KDV matrahını düşürür', () => {
+    // Satırın tek KDV oranı vardır; iskonto matraha girer ve vergi doğru
+    // tabandan hesaplanır.
+    const t = calculateInvoice({
+      lines: [{ ...satir, allowanceCharges: [{ isCharge: false, amount: 100 }] }],
+    })
+    expect(formatAmount(t.lineExtensionAmount)).toBe('900.00')
+    expect(formatAmount(t.vatTotalAmount)).toBe('180.00')
+    expect(formatAmount(t.payableAmount)).toBe('1080.00')
+  })
+
+  it('satır ek yükü KDV matrahını yükseltir', () => {
+    const t = calculateInvoice({
+      lines: [{ ...satir, allowanceCharges: [{ isCharge: true, amount: 100 }] }],
+    })
+    expect(formatAmount(t.lineExtensionAmount)).toBe('1100.00')
+    expect(formatAmount(t.vatTotalAmount)).toBe('220.00')
+    expect(formatAmount(t.chargeTotalAmount)).toBe('100.00')
+  })
+
+  it('satır iskontosu ile ek yükü aynı satırda birlikte işler', () => {
+    const t = calculateInvoice({
+      lines: [
+        {
+          ...satir,
+          allowanceCharges: [
+            { isCharge: false, amount: 100 },
+            { isCharge: true, amount: 30 },
+          ],
+        },
+      ],
+    })
+    expect(formatAmount(t.lineExtensionAmount)).toBe('930.00')
+    expect(formatAmount(t.allowanceTotalAmount)).toBe('100.00')
+    expect(formatAmount(t.chargeTotalAmount)).toBe('30.00')
+  })
+
+  it('satır iskontosunu asıl iskontoyla birlikte kullanabilir', () => {
+    const t = calculateInvoice({
+      lines: [{ ...satir, discountRate: 10, allowanceCharges: [{ isCharge: false, amount: 50 }] }],
+    })
+    // 1000 brüt − 100 oransal iskonto − 50 ek iskonto
+    expect(formatAmount(t.lineExtensionAmount)).toBe('850.00')
+    expect(formatAmount(t.allowanceTotalAmount)).toBe('150.00')
+  })
+
+  it('belge iskontosu KDV matrahını DEĞİŞTİRMEZ, ödenecek tutardan düşer', () => {
+    // Satırlar farklı oran taşıyabildiğinden belge düzeyinde bir
+    // iskontonun hangi oranı azaltacağı tanımsızdır; bu yüzden vergiden
+    // sonra uygulanır.
+    const t = calculateInvoice({
+      lines: [satir],
+      allowanceCharges: [{ isCharge: false, amount: 100 }],
+    })
+    expect(formatAmount(t.lineExtensionAmount)).toBe('1000.00')
+    expect(formatAmount(t.vatTotalAmount)).toBe('200.00')
+    expect(formatAmount(t.taxInclusiveAmount)).toBe('1200.00')
+    expect(formatAmount(t.payableAmount)).toBe('1100.00')
+    expect(formatAmount(t.allowanceTotalAmount)).toBe('100.00')
+  })
+
+  it('belge ek yükü ödenecek tutarı artırır', () => {
+    const t = calculateInvoice({
+      lines: [satir],
+      allowanceCharges: [{ isCharge: true, amount: 75 }],
+    })
+    expect(formatAmount(t.payableAmount)).toBe('1275.00')
+    expect(formatAmount(t.chargeTotalAmount)).toBe('75.00')
+  })
+
+  it('belge iskontosu tevkifatla birlikte doğru sırada uygulanır', () => {
+    const t = calculateInvoice({
+      lines: [{ ...satir, withholdingCode: '601' }],
+      allowanceCharges: [{ isCharge: false, amount: 100 }],
+    })
+    // 1200 vergi dâhil − 80 tevkifat (200 × %40) − 100 belge iskontosu
+    expect(formatAmount(t.payableAmount)).toBe('1020.00')
+  })
+
+  it('iskonto ve yük yokken toplamlar sıfırdır', () => {
+    const t = calculateInvoice({ lines: [satir] })
+    expect(formatAmount(t.chargeTotalAmount)).toBe('0.00')
+    expect(formatAmount(t.allowanceTotalAmount)).toBe('0.00')
+  })
+})

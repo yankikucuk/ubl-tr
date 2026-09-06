@@ -74,6 +74,15 @@ export interface InvoiceLineInput {
    * İDİS'te sistem numarası.
    */
   readonly additionalIdentifications?: readonly AdditionalItemIdentificationInput[]
+  /**
+   * Satır düzeyinde ek iskonto ve yükler.
+   *
+   * `discountRate` / `discountAmount` ile birlikte kullanılabilir: o ikisi
+   * asıl iskontoyu, bu liste kalemi etkileyen diğer indirim ve masrafları
+   * taşır. Hepsi `cbc:LineExtensionAmount`'a ve dolayısıyla KDV matrahına
+   * girer.
+   */
+  readonly allowanceCharges?: readonly AllowanceChargeInput[]
 }
 
 /** Hesaplanmış bir vergi alt toplamı. */
@@ -101,6 +110,44 @@ export interface TaxSubtotal {
   readonly exemptionReason?: string
 }
 
+/**
+ * İskonto ya da ek yük — `cac:AllowanceCharge`.
+ *
+ * Hem satır hem belge düzeyinde kullanılır. `amount` zorunludur;
+ * `multiplierFactor` ve `baseAmount` yalnızca belgeye yazılan açıklayıcı
+ * alanlardır, tutar onlardan hesaplanmaz. Böylece kaynağı ne olursa olsun
+ * (elle girilen tutar, oran, karma) belgeye giren sayı tek ve kesindir.
+ *
+ * Etkisi düzeye göre değişir:
+ *
+ * - **Satır düzeyinde** tutar `cbc:LineExtensionAmount`'a girer, dolayısıyla
+ *   KDV matrahını da değiştirir. Satırın tek bir KDV oranı olduğu için bu
+ *   iyi tanımlıdır.
+ * - **Belge düzeyinde** tutar vergiden SONRA `cbc:PayableAmount`'a uygulanır;
+ *   KDV yeniden hesaplanmaz. Satırlar farklı oranlar taşıyabildiğinden
+ *   belge düzeyinde bir iskontonun hangi oranı azaltacağı tanımsızdır.
+ *   KDV matrahını da düşürmesi gereken bir iskonto satıra yazılmalıdır.
+ */
+export interface AllowanceChargeInput {
+  /** `true` ek yük (masraf), `false` iskonto — `cbc:ChargeIndicator`. */
+  readonly isCharge: boolean
+  /** Tutar — `cbc:Amount`. */
+  readonly amount: NumericInput
+  /** Gerekçe kodu — `cbc:AllowanceChargeReasonCode`. */
+  readonly reasonCode?: string
+  /** Gerekçe — `cbc:AllowanceChargeReason`. */
+  readonly reason?: string
+  /**
+   * Çarpan, **yüzde** olarak — `cbc:MultiplierFactorNumeric`.
+   *
+   * `10` verilirse belgeye `0.1` yazılır; satır iskontosundaki
+   * `discountRate` ile aynı sözleşme.
+   */
+  readonly multiplierFactor?: NumericInput
+  /** Çarpanın uygulandığı baz tutar — `cbc:BaseAmount`. */
+  readonly baseAmount?: NumericInput
+}
+
 /** Hesaplanmış bir satır. */
 export interface CalculatedLine {
   /** Satırın bir tabanlı sıra numarası; `cbc:ID` olarak yazılır. */
@@ -117,7 +164,11 @@ export interface CalculatedLine {
   readonly grossAmount: Decimal
   /** İskonto tutarı. */
   readonly discountAmount: Decimal
-  /** İskonto düşülmüş satır tutarı — `cbc:LineExtensionAmount`. */
+  /** Satır düzeyindeki ek iskontoların toplamı. */
+  readonly allowanceAmount: Decimal
+  /** Satır düzeyindeki ek yüklerin toplamı. */
+  readonly chargeAmount: Decimal
+  /** İskonto ve yükler işlenmiş satır tutarı — `cbc:LineExtensionAmount`. */
   readonly lineExtensionAmount: Decimal
   /** Ek vergilerle değişmiş KDV matrahı. */
   readonly vatBase: Decimal
@@ -145,6 +196,13 @@ export interface CalculatedInvoice {
   readonly lineExtensionAmount: Decimal
   /** İskonto toplamı — `cbc:AllowanceTotalAmount`. */
   readonly allowanceTotalAmount: Decimal
+  /**
+   * Ek yük toplamı — `cbc:ChargeTotalAmount`.
+   *
+   * Satır ve belge düzeyindeki yüklerin toplamı; yük yoksa sıfırdır ve
+   * öğe belgeye yazılmaz.
+   */
+  readonly chargeTotalAmount: Decimal
   /** Vergi hariç toplam — `cbc:TaxExclusiveAmount`. */
   readonly taxExclusiveAmount: Decimal
   /** Vergi dâhil toplam — `cbc:TaxInclusiveAmount`. */
@@ -249,7 +307,22 @@ export const calculateLine = (
         ? percentage(grossAmount, toDecimal(input.discountRate))
         : decimal('0', 2)
 
-  const lineExtensionAmount = subtract(grossAmount, discountAmount)
+  const kalemler = input.allowanceCharges ?? []
+  const allowanceAmount = sum(
+    kalemler.filter((k) => !k.isCharge).map((k) => toDecimal(k.amount)),
+    2,
+  )
+  const chargeAmount = sum(
+    kalemler.filter((k) => k.isCharge).map((k) => toDecimal(k.amount)),
+    2,
+  )
+
+  // Satır düzeyindeki iskonto ve yükler satır tutarına girer; KDV matrahı
+  // da bu tutardan türediği için vergi doğru tabandan hesaplanır.
+  const lineExtensionAmount = add(
+    subtract(subtract(grossAmount, discountAmount), allowanceAmount),
+    chargeAmount,
+  )
 
   // Ek vergilerin KDV matrahına üç ayrı etkisi olabilir ve üçü de gerçek:
   // ÖTV matrahı ARTIRIR (KDV, ÖTV dâhil tutar üzerinden alınır), damga
@@ -303,6 +376,8 @@ export const calculateLine = (
     vatRate,
     grossAmount,
     discountAmount,
+    allowanceAmount,
+    chargeAmount,
     lineExtensionAmount,
     vatBase,
     vatAmount,
@@ -315,6 +390,13 @@ export const calculateLine = (
 export interface InvoiceTotalsInput {
   /** Fatura satırları; en az bir tane olmalı. */
   readonly lines: readonly InvoiceLineInput[]
+  /**
+   * Belge düzeyinde iskonto ve ek yükler.
+   *
+   * Vergiden SONRA ödenecek tutara uygulanır; KDV yeniden hesaplanmaz.
+   * Bkz. {@link AllowanceChargeInput}.
+   */
+  readonly allowanceCharges?: readonly AllowanceChargeInput[]
   /** ISO 4217 para birimi kodu; varsayılan `TRY`. */
   readonly currencyCode?: string
   /**
@@ -426,10 +508,26 @@ export const calculateInvoice = (input: InvoiceTotalsInput): CalculatedInvoice =
     lines.map((l) => l.lineExtensionAmount),
     scale,
   )
-  const allowanceTotalAmount = sum(
-    lines.map((l) => l.discountAmount),
+  const belgeKalemleri = input.allowanceCharges ?? []
+  const belgeIskontosu = sum(
+    belgeKalemleri.filter((k) => !k.isCharge).map((k) => toDecimal(k.amount)),
     scale,
   )
+  const belgeYuku = sum(
+    belgeKalemleri.filter((k) => k.isCharge).map((k) => toDecimal(k.amount)),
+    scale,
+  )
+
+  // `cbc:AllowanceTotalAmount` GİB örneklerinde satır iskontolarının
+  // toplamıdır ve ödenecek tutardan AYRICA düşülmez — satır tutarından
+  // zaten düşülmüştür. Belge düzeyindeki iskonto ise satırlara hiç
+  // girmediği için ödenecek tutara uygulanır; ikisi aynı öğede toplanır
+  // ama ödenecek tutara etkileri farklıdır.
+  const allowanceTotalAmount = sum(
+    [...lines.map((l) => l.discountAmount), ...lines.map((l) => l.allowanceAmount), belgeIskontosu],
+    scale,
+  )
+  const chargeTotalAmount = sum([...lines.map((l) => l.chargeAmount), belgeYuku], scale)
   const vatTotalAmount = sum(
     lines.map((l) => l.vatAmount),
     scale,
@@ -467,7 +565,10 @@ export const calculateInvoice = (input: InvoiceTotalsInput): CalculatedInvoice =
   // ÖTV'li bir faturada vergi hariç toplamı ÖTV kadar şişirir.
   const taxExclusiveAmount = lineExtensionAmount
   const taxInclusiveAmount = add(add(taxExclusiveAmount, vatTotalAmount), otherTaxTotalSigned)
-  const payableAmount = subtract(taxInclusiveAmount, withholdingTotalAmount)
+  const payableAmount = add(
+    subtract(subtract(taxInclusiveAmount, withholdingTotalAmount), belgeIskontosu),
+    belgeYuku,
+  )
 
   return {
     currencyCode,
@@ -477,6 +578,7 @@ export const calculateInvoice = (input: InvoiceTotalsInput): CalculatedInvoice =
     withholdingSubtotals,
     lineExtensionAmount: rescale(lineExtensionAmount, scale),
     allowanceTotalAmount: rescale(allowanceTotalAmount, scale),
+    chargeTotalAmount: rescale(chargeTotalAmount, scale),
     taxExclusiveAmount: rescale(taxExclusiveAmount, scale),
     taxInclusiveAmount: rescale(taxInclusiveAmount, scale),
     vatTotalAmount: rescale(vatTotalAmount, scale),

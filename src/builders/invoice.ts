@@ -30,6 +30,7 @@ import {
   type XmlElement,
 } from '../core/index.js'
 import {
+  type AllowanceChargeInput,
   amountInWordsNote,
   type AmountInWordsNoteOptions,
   DocumentInputError,
@@ -352,6 +353,13 @@ export interface InvoiceInput {
   /** Ödeme koşulları. */
   readonly paymentTerms?: PaymentTermsInput
   /**
+   * Belge düzeyinde iskonto ve ek yükler — `cac:AllowanceCharge`.
+   *
+   * Vergiden SONRA ödenecek tutara uygulanır; KDV yeniden hesaplanmaz.
+   * KDV matrahını da düşürmesi gereken iskonto satıra yazılmalıdır.
+   */
+  readonly allowanceCharges?: readonly AllowanceChargeInput[]
+  /**
    * Belge düzeyinde teslim bilgisi — `cac:Delivery`.
    *
    * Satır düzeyindeki teslimden farklıdır: burada fiili teslim tarihi ve
@@ -458,6 +466,31 @@ const amountLeaf = (
 ): XmlElement =>
   leaf(CBC, name, toStringValue(value, currencyDefinition(currencyCode, tables).minorUnits), [
     { name: 'currencyID', value: currencyCode },
+  ])
+
+/** Bir iskonto ya da ek yükü `cac:AllowanceCharge` öğesine çevirir. */
+const buildAllowanceCharge = (
+  kalem: AllowanceChargeInput,
+  currencyCode: string,
+  tables?: CodeTables,
+): XmlElement =>
+  container(CAC, 'AllowanceCharge', [
+    leaf(CBC, 'ChargeIndicator', kalem.isCharge ? 'true' : 'false'),
+    optionalLeaf(CBC, 'AllowanceChargeReasonCode', kalem.reasonCode),
+    optionalLeaf(CBC, 'AllowanceChargeReason', kalem.reason),
+    // Çarpan kesre çevrilir (yüzde 10 → 0,1); satır iskontosuyla aynı
+    // sözleşme. Bölme yapılmaz, ondalığın basamağı iki artırılır.
+    kalem.multiplierFactor === undefined
+      ? undefined
+      : leaf(
+          CBC,
+          'MultiplierFactorNumeric',
+          toStringValueRange(asFraction(kalem.multiplierFactor), 0, 6),
+        ),
+    amountLeaf('Amount', asDecimal(kalem.amount), currencyCode, tables),
+    kalem.baseAmount === undefined
+      ? undefined
+      : amountLeaf('BaseAmount', asDecimal(kalem.baseAmount), currencyCode, tables),
   ])
 
 /** İliştirilen dosyayı `cac:Attachment` öğesine çevirir. */
@@ -576,6 +609,9 @@ const buildInvoiceLine = (
           amountLeaf('Amount', line.discountAmount, currencyCode, tables),
           amountLeaf('BaseAmount', line.grossAmount, currencyCode, tables),
         ]),
+    ...(girdi.allowanceCharges ?? []).map((kalem) =>
+      buildAllowanceCharge(kalem, currencyCode, tables),
+    ),
     container(CAC, 'TaxTotal', [
       amountLeaf('TaxAmount', line.vatAmount, currencyCode, tables),
       ...line.taxes.map((tax) => buildTaxSubtotal(tax, currencyCode, undefined, tables)),
@@ -670,6 +706,7 @@ export const buildInvoice = (
   const totals = calculateInvoice({
     lines: input.lines,
     currencyCode,
+    ...(input.allowanceCharges === undefined ? {} : { allowanceCharges: input.allowanceCharges }),
     ...(options.codeTables === undefined ? {} : { codeTables: options.codeTables }),
   })
 
@@ -816,6 +853,9 @@ export const buildInvoice = (
             : amountLeaf('Amount', asDecimal(input.paymentTerms.amount), currencyCode, tables),
           optionalLeaf(CBC, 'PaymentDueDate', input.paymentTerms.dueDate),
         ]),
+    ...(input.allowanceCharges ?? []).map((kalem) =>
+      buildAllowanceCharge(kalem, currencyCode, tables),
+    ),
     input.exchangeRate === undefined
       ? undefined
       : container(CAC, 'PricingExchangeRate', [
@@ -872,6 +912,9 @@ export const buildInvoice = (
       amountLeaf('TaxExclusiveAmount', totals.taxExclusiveAmount, currencyCode, tables),
       amountLeaf('TaxInclusiveAmount', totals.taxInclusiveAmount, currencyCode, tables),
       amountLeaf('AllowanceTotalAmount', totals.allowanceTotalAmount, currencyCode, tables),
+      isZero(totals.chargeTotalAmount)
+        ? undefined
+        : amountLeaf('ChargeTotalAmount', totals.chargeTotalAmount, currencyCode, tables),
       amountLeaf('PayableAmount', totals.payableAmount, currencyCode, tables),
     ]),
     ...totals.lines.map((line) =>

@@ -928,3 +928,85 @@ describe('ödeme koşulları', () => {
     expect(sira.indexOf('PaymentTerms')).toBeLessThan(sira.indexOf('PricingExchangeRate'))
   })
 })
+
+describe('iskonto ve ek yük öğeleri', () => {
+  it('belge düzeyindeki yükü gerekçesiyle yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        allowanceCharges: [
+          { isCharge: true, amount: 75, reasonCode: 'NAKLIYE', reason: 'Kargo bedeli' },
+        ],
+      }),
+    )
+    expect(xml).toContain(
+      '<cac:AllowanceCharge><cbc:ChargeIndicator>true</cbc:ChargeIndicator><cbc:AllowanceChargeReasonCode>NAKLIYE</cbc:AllowanceChargeReasonCode><cbc:AllowanceChargeReason>Kargo bedeli</cbc:AllowanceChargeReason><cbc:Amount currencyID="TRY">75.00</cbc:Amount></cac:AllowanceCharge>',
+    )
+  })
+
+  it('çarpanı kesre çevirir ve baz tutarı yazar', () => {
+    // Satır iskontosuyla aynı sözleşme: yüzde 10 belgeye 0,1 olarak girer.
+    const xml = buildInvoiceXml(
+      girdi({
+        allowanceCharges: [
+          { isCharge: false, amount: 100, multiplierFactor: 10, baseAmount: 1000 },
+        ],
+      }),
+    )
+    expect(xml).toContain('<cbc:MultiplierFactorNumeric>0.1</cbc:MultiplierFactorNumeric>')
+    expect(xml).toContain('<cbc:BaseAmount currencyID="TRY">1000.00</cbc:BaseAmount>')
+  })
+
+  it('ek yük varken ChargeTotalAmount yazar', () => {
+    const xml = buildInvoiceXml(girdi({ allowanceCharges: [{ isCharge: true, amount: 75 }] }))
+    expect(xml).toContain(
+      '<cbc:AllowanceTotalAmount currencyID="TRY">0.00</cbc:AllowanceTotalAmount><cbc:ChargeTotalAmount currencyID="TRY">75.00</cbc:ChargeTotalAmount>',
+    )
+    expect(xml).toContain('<cbc:PayableAmount currencyID="TRY">1275.00</cbc:PayableAmount>')
+  })
+
+  it('ek yük yokken ChargeTotalAmount YAZMAZ', () => {
+    // Sıfır değerli bir öğe yazmak, yükü olmayan her belgenin çıktısını
+    // gereksiz yere değiştirir.
+    expect(buildInvoiceXml(girdi())).not.toContain('ChargeTotalAmount')
+  })
+
+  it('satır düzeyindeki yükü satır iskontosundan SONRA yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        lines: [
+          {
+            name: 'Ürün',
+            quantity: 10,
+            unitPrice: 100,
+            vatRate: 20,
+            discountRate: 10,
+            allowanceCharges: [{ isCharge: true, amount: 30, reason: 'Montaj' }],
+          },
+        ],
+      }),
+    )
+    const iskonto = xml.indexOf('<cbc:ChargeIndicator>false</cbc:ChargeIndicator>')
+    const yuk = xml.indexOf('<cbc:ChargeIndicator>true</cbc:ChargeIndicator>')
+    expect(iskonto).toBeGreaterThan(-1)
+    expect(yuk).toBeGreaterThan(iskonto)
+    // Satır tutarı: 1000 − 100 iskonto + 30 yük
+    expect(xml).toContain(
+      '<cbc:LineExtensionAmount currencyID="TRY">930.00</cbc:LineExtensionAmount>',
+    )
+  })
+
+  it('belge iskontosunu PaymentTerms ile PricingExchangeRate arasına yazar', () => {
+    const sira = kokSirasi(
+      buildInvoiceXml(
+        girdi({
+          currencyCode: 'USD',
+          exchangeRate: { rate: 34.25 },
+          paymentTerms: { note: 'peşin' },
+          allowanceCharges: [{ isCharge: false, amount: 10 }],
+        }),
+      ),
+    )
+    expect(sira.indexOf('PaymentTerms')).toBeLessThan(sira.indexOf('AllowanceCharge'))
+    expect(sira.indexOf('AllowanceCharge')).toBeLessThan(sira.indexOf('PricingExchangeRate'))
+  })
+})

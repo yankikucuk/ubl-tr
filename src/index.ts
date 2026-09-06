@@ -138,6 +138,7 @@ export {
   lineUnitCode,
   parseDocumentNumber,
   type AdditionalItemIdentificationInput,
+  type AllowanceChargeInput,
   type AmountInWordsNoteOptions,
   type AmountInWordsOptions,
   type CalculatedInvoice,
