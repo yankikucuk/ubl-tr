@@ -737,3 +737,194 @@ describe('fatura dönemi ve iade aracısı', () => {
     )
   })
 })
+
+describe('belge atıfları', () => {
+  it('irsaliye, makbuz ve sipariş kaynağı atıflarını UBL sırasında yazar', () => {
+    // UBL sırası: BillingReference → Despatch → Receipt → Originator →
+    // Contract → Additional. Doğru öğeleri yanlış sırada yazmak belgeyi
+    // geçersiz kılar, bu yüzden sıranın kendisi doğrulanır.
+    const sira = kokSirasi(
+      buildInvoiceXml(
+        girdi({
+          type: InvoiceType.IADE,
+          billingReference: { id: 'ABC2025000000009', issueDate: '2025-12-01' },
+          despatchDocumentReferences: [{ id: 'IRS-1', issueDate: '2026-09-01' }],
+          receiptDocumentReferences: [{ id: 'MKB-1' }],
+          originatorDocumentReferences: [{ id: 'IHL-1' }],
+          contractDocument: { id: 'SZL-1' },
+          additionalDocuments: [{ id: 'EK-1' }],
+        }),
+      ),
+    )
+    expect(sira.slice(sira.indexOf('BillingReference'), sira.indexOf('Signature'))).toEqual([
+      'BillingReference',
+      'DespatchDocumentReference',
+      'ReceiptDocumentReference',
+      'OriginatorDocumentReference',
+      'ContractDocumentReference',
+      'AdditionalDocumentReference',
+    ])
+  })
+
+  it('her atıf listesini birden çok kez yazabilir', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        despatchDocumentReferences: [
+          { id: 'IRS-1', issueDate: '2026-09-01' },
+          { id: 'IRS-2', issueDate: '2026-09-02' },
+        ],
+      }),
+    )
+    expect(xml).toContain(
+      '<cac:DespatchDocumentReference><cbc:ID>IRS-1</cbc:ID><cbc:IssueDate>2026-09-01</cbc:IssueDate></cac:DespatchDocumentReference>',
+    )
+    expect(xml).toContain(
+      '<cac:DespatchDocumentReference><cbc:ID>IRS-2</cbc:ID><cbc:IssueDate>2026-09-02</cbc:IssueDate></cac:DespatchDocumentReference>',
+    )
+  })
+
+  it('atıf verilmediğinde hiçbir öğe yazmaz', () => {
+    const xml = buildInvoiceXml(girdi())
+    expect(xml).not.toContain('DespatchDocumentReference')
+    expect(xml).not.toContain('ReceiptDocumentReference')
+    expect(xml).not.toContain('OriginatorDocumentReference')
+  })
+})
+
+describe('ek dosya', () => {
+  it('gömülü ikili dosyayı MIME türü ve dosya adıyla yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        additionalDocuments: [
+          {
+            id: 'EK-1',
+            attachment: {
+              embeddedBinary: {
+                content: 'JVBERi0=',
+                mimeCode: 'application/pdf',
+                fileName: 'f.pdf',
+              },
+            },
+          },
+        ],
+      }),
+    )
+    expect(xml).toContain(
+      '<cac:Attachment><cbc:EmbeddedDocumentBinaryObject mimeCode="application/pdf" filename="f.pdf">JVBERi0=</cbc:EmbeddedDocumentBinaryObject></cac:Attachment>',
+    )
+  })
+
+  it('dosya adı verilmediğinde filename özniteliğini atlar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        additionalDocuments: [
+          {
+            id: 'EK-1',
+            attachment: { embeddedBinary: { content: 'AAA=', mimeCode: 'image/png' } },
+          },
+        ],
+      }),
+    )
+    expect(xml).toContain('<cbc:EmbeddedDocumentBinaryObject mimeCode="image/png">AAA=</cbc:')
+    expect(xml).not.toContain('filename=')
+  })
+
+  it('dış adresi yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        additionalDocuments: [
+          {
+            id: 'EK-1',
+            attachment: {
+              externalReference: {
+                uri: 'https://ornek.test/f.pdf',
+                mimeCode: 'application/pdf',
+                fileName: 'f.pdf',
+                description: 'Sözleşme',
+              },
+            },
+          },
+        ],
+      }),
+    )
+    expect(xml).toContain(
+      '<cac:ExternalReference><cbc:URI>https://ornek.test/f.pdf</cbc:URI><cbc:MimeCode>application/pdf</cbc:MimeCode><cbc:FileName>f.pdf</cbc:FileName><cbc:Description>Sözleşme</cbc:Description></cac:ExternalReference>',
+    )
+  })
+
+  it('iki yolu birlikte de yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        additionalDocuments: [
+          {
+            id: 'EK-1',
+            attachment: {
+              embeddedBinary: { content: 'AAA=', mimeCode: 'image/png' },
+              externalReference: { uri: 'https://ornek.test/f.png' },
+            },
+          },
+        ],
+      }),
+    )
+    // UBL sırası: gömülü dosya ÖNCE, dış adres SONRA.
+    expect(xml).toContain('<cbc:EmbeddedDocumentBinaryObject')
+    expect(xml.indexOf('EmbeddedDocumentBinaryObject')).toBeLessThan(
+      xml.indexOf('ExternalReference'),
+    )
+  })
+
+  it('boş dosya nesnesi için Attachment öğesi yazmaz', () => {
+    // İkisi de yoksa boş bir `cac:Attachment` yazmak belgeyi geçersiz
+    // kılar: UBL en az bir çocuk bekler.
+    const xml = buildInvoiceXml(girdi({ additionalDocuments: [{ id: 'EK-1', attachment: {} }] }))
+    expect(xml).not.toContain('Attachment')
+  })
+})
+
+describe('ödeme koşulları', () => {
+  it('not, gecikme faizi, tutar ve vadeyi UBL sırasında yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        paymentTerms: {
+          note: '30 gün vadeli',
+          penaltySurchargePercent: 2,
+          amount: 1200,
+          dueDate: '2026-10-06',
+        },
+      }),
+    )
+    expect(xml).toContain(
+      '<cac:PaymentTerms><cbc:Note>30 gün vadeli</cbc:Note><cbc:PenaltySurchargePercent>2.00</cbc:PenaltySurchargePercent><cbc:Amount currencyID="TRY">1200.00</cbc:Amount><cbc:PaymentDueDate>2026-10-06</cbc:PaymentDueDate></cac:PaymentTerms>',
+    )
+  })
+
+  it('gecikme faizini kesre ÇEVİRMEZ', () => {
+    // İskonto oranı `MultiplierFactorNumeric` olarak kesre çevrilir
+    // (10 → 0,1); gecikme faizi ise yüzde tipindedir ve olduğu gibi
+    // yazılır. İkisini karıştırmak faizi yüz kat küçültür.
+    const xml = buildInvoiceXml(girdi({ paymentTerms: { penaltySurchargePercent: 10 } }))
+    expect(xml).toContain('<cbc:PenaltySurchargePercent>10.00</cbc:PenaltySurchargePercent>')
+  })
+
+  it('tutarı belgenin para biriminde yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({ currencyCode: 'USD', exchangeRate: { rate: 34.25 }, paymentTerms: { amount: 50 } }),
+    )
+    expect(xml).toContain('<cbc:Amount currencyID="USD">50.00</cbc:Amount>')
+  })
+
+  it('ödeme koşulunu PaymentMeans ile PricingExchangeRate arasına yazar', () => {
+    const sira = kokSirasi(
+      buildInvoiceXml(
+        girdi({
+          currencyCode: 'USD',
+          exchangeRate: { rate: 34.25 },
+          paymentMeans: { meansCode: '42' },
+          paymentTerms: { note: 'peşin' },
+        }),
+      ),
+    )
+    expect(sira.indexOf('PaymentMeans')).toBeLessThan(sira.indexOf('PaymentTerms'))
+    expect(sira.indexOf('PaymentTerms')).toBeLessThan(sira.indexOf('PricingExchangeRate'))
+  })
+})

@@ -129,6 +129,20 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
   - `removeIdentification` / `setIdentifications` — kimlik listesi
     yardımcıları; liste boşalınca alan tümden kaldırılır (`schemeID`
     taşımayan boş `cac:PartyIdentification` Schematron'u ihlal eder)
+- **Belge atıfları, ödeme koşulları ve ek dosya** — doğrulayıcının
+  tanıdığı ama kurucunun yazamadığı öğeler kapatıldı:
+  - `despatchDocumentReferences` / `receiptDocumentReferences` /
+    `originatorDocumentReferences` — irsaliye, mal kabul makbuzu ve siparişi
+    başlatan belge atıfları. Üçü de UBL'de `cac:DocumentReference`
+    tipindedir; sıra tek yerde tanımlanır
+  - `paymentTerms` — `cac:PaymentTerms`; not, gecikme faizi yüzdesi, tutar
+    ve vade. Gecikme faizi **kesre çevrilmez**: iskonto oranı
+    `MultiplierFactorNumeric` olarak 10 → 0,1 yazılırken faiz yüzde
+    tipindedir ve olduğu gibi kalır
+  - `attachment` — ek belge atfına iliştirilen dosya; base64 gömme
+    (`cbc:EmbeddedDocumentBinaryObject`, `mimeCode` ve `filename`
+    öznitelikleriyle) ve/veya dış adres (`cac:ExternalReference`). İkisi de
+    boşsa öğe hiç yazılmaz — boş `cac:Attachment` belgeyi geçersiz kılar
 - **Kod tablosu genişletme** (`CodeTables`) — gömülü GİB kod listelerinin
   önüne geçen ek tanımlar; yeni kod eklenebilir, var olan tanım
   düzeltilebilir. GİB bir kod yayımladığında paket sürümü beklemek

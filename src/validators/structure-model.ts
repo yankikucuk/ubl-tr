@@ -66,6 +66,29 @@ const a1n = (name: string): ChildRule => ({ namespace: CAC, name, min: 1, max: I
  * Modelde bulunmayan bir öğe tipinin altı denetlenmez; bu bilinçli bir
  * seçimdir — eksik modelle yanlış hata üretmektense sessiz kalmak yeğdir.
  */
+/**
+ * `cac:DocumentReference` tipinin çocuk sırası.
+ *
+ * Ek belge, irsaliye, makbuz ve sipariş kaynağı atıflarının hepsi UBL'de
+ * bu tiptedir; sıra tek yerde tanımlanır ki dördü ayrışmasın.
+ */
+const DOCUMENT_REFERENCE_CHILDREN: readonly ChildRule[] = [
+  b('ID'),
+  b0('CopyIndicator'),
+  b0('UUID'),
+  b0('IssueDate'),
+  b0('IssueTime'),
+  b0('DocumentTypeCode'),
+  b0('DocumentType'),
+  bn('XPath'),
+  b0('LanguageID'),
+  b0('LocaleCode'),
+  b0('VersionID'),
+  b0('DocumentStatusCode'),
+  bn('DocumentDescription'),
+  a0('Attachment'),
+]
+
 export const STRUCTURE_MODELS: readonly ElementModel[] = [
   {
     namespace: 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
@@ -541,21 +564,64 @@ export const STRUCTURE_MODELS: readonly ElementModel[] = [
   {
     namespace: CAC,
     name: 'AdditionalDocumentReference',
+    children: DOCUMENT_REFERENCE_CHILDREN,
+  },
+  {
+    namespace: CAC,
+    name: 'DespatchDocumentReference',
+    children: DOCUMENT_REFERENCE_CHILDREN,
+  },
+  {
+    namespace: CAC,
+    name: 'ReceiptDocumentReference',
+    children: DOCUMENT_REFERENCE_CHILDREN,
+  },
+  {
+    namespace: CAC,
+    name: 'OriginatorDocumentReference',
+    children: DOCUMENT_REFERENCE_CHILDREN,
+  },
+  {
+    namespace: CAC,
+    name: 'Attachment',
+    children: [b0('EmbeddedDocumentBinaryObject'), a0('ExternalReference')],
+  },
+  {
+    namespace: CAC,
+    name: 'ExternalReference',
     children: [
-      b('ID'),
-      b0('CopyIndicator'),
-      b0('UUID'),
-      b0('IssueDate'),
-      b0('IssueTime'),
-      b0('DocumentTypeCode'),
-      b0('DocumentType'),
-      bn('XPath'),
-      b0('LanguageID'),
-      b0('LocaleCode'),
-      b0('VersionID'),
-      b0('DocumentStatusCode'),
-      bn('DocumentDescription'),
-      a0('Attachment'),
+      b0('URI'),
+      b0('DocumentHash'),
+      b0('HashAlgorithmMethod'),
+      b0('ExpiryDate'),
+      b0('ExpiryTime'),
+      b0('MimeCode'),
+      b0('FormatCode'),
+      b0('EncodingCode'),
+      b0('CharacterSetCode'),
+      b0('FileName'),
+      bn('Description'),
+    ],
+  },
+  {
+    namespace: CAC,
+    name: 'PaymentTerms',
+    children: [
+      b0('ID'),
+      b0('PaymentMeansID'),
+      b0('PrepaidPaymentReferenceID'),
+      bn('Note'),
+      b0('ReferenceEventCode'),
+      b0('SettlementDiscountPercent'),
+      b0('PenaltySurchargePercent'),
+      b0('PaymentPercent'),
+      b0('Amount'),
+      b0('SettlementDiscountAmount'),
+      b0('PenaltyAmount'),
+      b0('PaymentTermsDetailsURI'),
+      b0('PaymentDueDate'),
+      b0('InstallmentDueDate'),
+      b0('InvoicePeriod'),
     ],
   },
   {

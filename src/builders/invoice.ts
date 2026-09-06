@@ -125,6 +125,47 @@ export interface InvoicePeriodInput {
   readonly endTime?: string
 }
 
+/** Belgeye gömülü ikili dosya — `cbc:EmbeddedDocumentBinaryObject`. */
+export interface EmbeddedBinaryInput {
+  /** Dosyanın base64 kodlanmış içeriği. */
+  readonly content: string
+  /**
+   * MIME türü — `mimeCode` özniteliği.
+   *
+   * UBL bu özniteliği zorunlu tutar; `application/pdf`, `image/png` gibi.
+   */
+  readonly mimeCode: string
+  /** Dosya adı — `filename` özniteliği. */
+  readonly fileName?: string
+}
+
+/** Belgenin dış adresi — `cac:ExternalReference`. */
+export interface ExternalReferenceInput {
+  /** Belgenin adresi — `cbc:URI`. */
+  readonly uri: string
+  /** MIME türü — `cbc:MimeCode`. */
+  readonly mimeCode?: string
+  /** Dosya adı — `cbc:FileName`. */
+  readonly fileName?: string
+  /** Serbest açıklama — `cbc:Description`. */
+  readonly description?: string
+}
+
+/**
+ * Belge atfına iliştirilen dosya — `cac:Attachment`.
+ *
+ * İki yol vardır ve ikisi birlikte de verilebilir: dosyayı belgenin içine
+ * base64 olarak gömmek ya da dış adresini yazmak. Gömme, belgeyi tek
+ * parça hâlinde taşınabilir kılar; e-Arşiv'de görüntüleme şablonu ve ek
+ * belgeler bu yolla iletilir.
+ */
+export interface AttachmentInput {
+  /** Gömülü dosya. */
+  readonly embeddedBinary?: EmbeddedBinaryInput
+  /** Dış adres. */
+  readonly externalReference?: ExternalReferenceInput
+}
+
 /** Genel belge atfı — `cac:AdditionalDocumentReference`. */
 export interface AdditionalDocumentReferenceInput {
   /** Atıf yapılan belgenin numarası ya da değeri — `cbc:ID`. */
@@ -149,7 +190,17 @@ export interface AdditionalDocumentReferenceInput {
   readonly documentType?: string
   /** Serbest açıklama — `cbc:DocumentDescription`. */
   readonly description?: string
+  /** İliştirilen dosya — `cac:Attachment`. */
+  readonly attachment?: AttachmentInput
 }
+
+/**
+ * İrsaliye, makbuz ve sipariş kaynağı atıflarının ortak girdisi.
+ *
+ * UBL'de bu üçü de `cac:DocumentReference` tipindedir; ek belge atfıyla
+ * aynı alanları taşırlar.
+ */
+export type DocumentReferenceInput = AdditionalDocumentReferenceInput
 
 /** Sözleşme atfı — `cac:ContractDocumentReference`. */
 export interface ContractDocumentReferenceInput {
@@ -184,6 +235,28 @@ export interface PaymentMeansInput {
   readonly accountNumber?: string
   /** Ödemeye ilişkin serbest açıklama — `cbc:PaymentNote`. */
   readonly note?: string
+}
+
+/**
+ * Ödeme koşulları — `cac:PaymentTerms`.
+ *
+ * Vade, gecikme faizi ve ödeme şartlarına ilişkin serbest metin burada
+ * taşınır. GİB alanı zorunlu tutmaz; sözleşmeli satışlarda ve kamu
+ * alımlarında beklenir.
+ */
+export interface PaymentTermsInput {
+  /** Ödeme koşulunun açıklaması — `cbc:Note`. */
+  readonly note?: string
+  /**
+   * Gecikme faizi oranı, yüzde olarak — `cbc:PenaltySurchargePercent`.
+   *
+   * `2` girilirse belgeye `2` yazılır; kesre çevrilmez.
+   */
+  readonly penaltySurchargePercent?: NumericInput
+  /** Ödeme koşuluna bağlı tutar — `cbc:Amount`. */
+  readonly amount?: NumericInput
+  /** Vade tarihi (`YYYY-MM-DD`) — `cbc:PaymentDueDate`. */
+  readonly dueDate?: string
 }
 
 /** Döviz kuru bilgisi — `cac:PricingExchangeRate`. */
@@ -261,6 +334,23 @@ export interface InvoiceInput {
   readonly contractDocument?: ContractDocumentReferenceInput
   /** Genel belge atıfları; sırayla yazılır. */
   readonly additionalDocuments?: readonly AdditionalDocumentReferenceInput[]
+  /**
+   * İrsaliye atıfları — `cac:DespatchDocumentReference`.
+   *
+   * Mal önce irsaliyeyle sevk edilip sonra faturalandığında, faturanın
+   * hangi irsaliyeleri kapsadığı burada bildirilir.
+   */
+  readonly despatchDocumentReferences?: readonly DocumentReferenceInput[]
+  /** Mal kabul makbuzu atıfları — `cac:ReceiptDocumentReference`. */
+  readonly receiptDocumentReferences?: readonly DocumentReferenceInput[]
+  /**
+   * Siparişi başlatan belgenin atıfları — `cac:OriginatorDocumentReference`.
+   *
+   * Kamu alımlarında ihale ya da talep belgesi bu alanda taşınır.
+   */
+  readonly originatorDocumentReferences?: readonly DocumentReferenceInput[]
+  /** Ödeme koşulları. */
+  readonly paymentTerms?: PaymentTermsInput
   /**
    * Belge düzeyinde teslim bilgisi — `cac:Delivery`.
    *
@@ -355,6 +445,10 @@ const asFraction = (rate: NumericInput): Decimal => {
   return { units: deger.units, scale: deger.scale + 2 }
 }
 
+/** Sayısal girdiyi ondalığa çevirir; zaten ondalıksa olduğu gibi bırakır. */
+const asDecimal = (value: NumericInput): Decimal =>
+  typeof value === 'object' ? value : decimal(value)
+
 /** Bir tutarı para birimi öznitelikli `cbc:` öğesine çevirir. */
 const amountLeaf = (
   name: string,
@@ -364,6 +458,51 @@ const amountLeaf = (
 ): XmlElement =>
   leaf(CBC, name, toStringValue(value, currencyDefinition(currencyCode, tables).minorUnits), [
     { name: 'currencyID', value: currencyCode },
+  ])
+
+/** İliştirilen dosyayı `cac:Attachment` öğesine çevirir. */
+const buildAttachment = (attachment: AttachmentInput): XmlElement | undefined => {
+  const gomulu = attachment.embeddedBinary
+  const dis = attachment.externalReference
+  if (gomulu === undefined && dis === undefined) return undefined
+  return container(CAC, 'Attachment', [
+    gomulu === undefined
+      ? undefined
+      : leaf(CBC, 'EmbeddedDocumentBinaryObject', gomulu.content, [
+          { name: 'mimeCode', value: gomulu.mimeCode },
+          ...(gomulu.fileName === undefined ? [] : [{ name: 'filename', value: gomulu.fileName }]),
+        ]),
+    dis === undefined
+      ? undefined
+      : container(CAC, 'ExternalReference', [
+          leaf(CBC, 'URI', dis.uri),
+          optionalLeaf(CBC, 'MimeCode', dis.mimeCode),
+          optionalLeaf(CBC, 'FileName', dis.fileName),
+          optionalLeaf(CBC, 'Description', dis.description),
+        ]),
+  ])
+}
+
+/**
+ * Bir belge atfını verilen adla `cac:` öğesine çevirir.
+ *
+ * `AdditionalDocumentReference`, `DespatchDocumentReference`,
+ * `ReceiptDocumentReference` ve `OriginatorDocumentReference` UBL'de aynı
+ * `DocumentReference` tipindedir; öğe sırası da ortaktır.
+ */
+const buildDocumentReference = (name: string, ref: DocumentReferenceInput): XmlElement =>
+  container(CAC, name, [
+    leaf(
+      CBC,
+      'ID',
+      ref.id,
+      ref.schemeId === undefined ? [] : [{ name: 'schemeID', value: ref.schemeId }],
+    ),
+    optionalLeaf(CBC, 'IssueDate', ref.issueDate),
+    optionalLeaf(CBC, 'DocumentTypeCode', ref.documentTypeCode),
+    optionalLeaf(CBC, 'DocumentType', ref.documentType),
+    optionalLeaf(CBC, 'DocumentDescription', ref.description),
+    ref.attachment === undefined ? undefined : buildAttachment(ref.attachment),
   ])
 
 /** Bir vergi alt toplamını `cac:TaxSubtotal` öğesine çevirir. */
@@ -600,6 +739,15 @@ export const buildInvoice = (
             ),
           ]),
         ]),
+    ...(input.despatchDocumentReferences ?? []).map((belge) =>
+      buildDocumentReference('DespatchDocumentReference', belge),
+    ),
+    ...(input.receiptDocumentReferences ?? []).map((belge) =>
+      buildDocumentReference('ReceiptDocumentReference', belge),
+    ),
+    ...(input.originatorDocumentReferences ?? []).map((belge) =>
+      buildDocumentReference('OriginatorDocumentReference', belge),
+    ),
     input.contractDocument === undefined
       ? undefined
       : container(CAC, 'ContractDocumentReference', [
@@ -614,18 +762,7 @@ export const buildInvoice = (
           optionalLeaf(CBC, 'IssueDate', input.contractDocument.issueDate),
         ]),
     ...(input.additionalDocuments ?? []).map((belge) =>
-      container(CAC, 'AdditionalDocumentReference', [
-        leaf(
-          CBC,
-          'ID',
-          belge.id,
-          belge.schemeId === undefined ? [] : [{ name: 'schemeID', value: belge.schemeId }],
-        ),
-        optionalLeaf(CBC, 'IssueDate', belge.issueDate),
-        optionalLeaf(CBC, 'DocumentTypeCode', belge.documentTypeCode),
-        optionalLeaf(CBC, 'DocumentType', belge.documentType),
-        optionalLeaf(CBC, 'DocumentDescription', belge.description),
-      ]),
+      buildDocumentReference('AdditionalDocumentReference', belge),
     ),
     (options.includeSignature ?? true)
       ? container(CAC, 'Signature', [
@@ -660,6 +797,24 @@ export const buildInvoice = (
             optionalLeaf(CBC, 'ID', input.paymentMeans.accountNumber),
             optionalLeaf(CBC, 'PaymentNote', input.paymentMeans.note),
           ]),
+        ]),
+    input.paymentTerms === undefined
+      ? undefined
+      : container(CAC, 'PaymentTerms', [
+          optionalLeaf(CBC, 'Note', input.paymentTerms.note),
+          // Gecikme faizi YÜZDE olarak yazılır; iskonto oranının aksine
+          // kesre çevrilmez. UBL bu iki alanı farklı tiplerde tanımlar.
+          input.paymentTerms.penaltySurchargePercent === undefined
+            ? undefined
+            : leaf(
+                CBC,
+                'PenaltySurchargePercent',
+                toStringValue(asDecimal(input.paymentTerms.penaltySurchargePercent), 2),
+              ),
+          input.paymentTerms.amount === undefined
+            ? undefined
+            : amountLeaf('Amount', asDecimal(input.paymentTerms.amount), currencyCode, tables),
+          optionalLeaf(CBC, 'PaymentDueDate', input.paymentTerms.dueDate),
         ]),
     input.exchangeRate === undefined
       ? undefined

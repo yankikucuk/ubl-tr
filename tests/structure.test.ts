@@ -248,3 +248,47 @@ describe('hata yakalama', () => {
     expect(validateStructure(bilinmeyen).issues).toEqual([])
   })
 })
+
+describe('yeni belge öğeleri yapı denetiminden geçer', () => {
+  /** Tüm yeni öğeleri birlikte taşıyan bir fatura. */
+  const zengin = buildInvoiceXml({
+    id: 'ABC2026000000002',
+    uuid: '1a2b3c4d-0001-4000-8001-000000000002',
+    issueDate: '2026-09-06',
+    profile: InvoiceProfile.TEMEL,
+    type: InvoiceType.SATIS,
+    supplier: {
+      taxNumber: '1234567890',
+      name: 'Satıcı A.Ş.',
+      taxOffice: 'Üsküdar',
+      address: { district: 'Üsküdar', city: 'İstanbul' },
+    },
+    customer: {
+      taxNumber: '9876543210',
+      name: 'Alıcı Ltd.',
+      address: { district: 'Kadıköy', city: 'İstanbul' },
+    },
+    lines: [{ name: 'Ürün', quantity: 10, unitPrice: 100, vatRate: 20 }],
+    despatchDocumentReferences: [{ id: 'IRS-1', issueDate: '2026-09-01' }],
+    receiptDocumentReferences: [{ id: 'MKB-1' }],
+    originatorDocumentReferences: [{ id: 'IHL-1' }],
+    additionalDocuments: [
+      {
+        id: 'EK-1',
+        attachment: {
+          embeddedBinary: { content: 'JVBERi0=', mimeCode: 'application/pdf', fileName: 'f.pdf' },
+          externalReference: { uri: 'https://ornek.test/f.pdf' },
+        },
+      },
+    ],
+    paymentMeans: { meansCode: '42' },
+    paymentTerms: { note: 'peşin', penaltySurchargePercent: 2, amount: 10, dueDate: '2026-10-06' },
+  })
+
+  it('yeni öğelerin hiçbiri yapı hatası üretmez', () => {
+    // Builder'ın ürettiği her öğe, doğrulayıcının modelinde de tanımlı
+    // olmalı; aksi hâlde kendi ürettiğimiz belge kendi denetimimizden
+    // geçemez.
+    expect(validateStructure(parseDocument(zengin).root).issues).toEqual([])
+  })
+})
