@@ -417,3 +417,72 @@ describe('iskonto ve ek yük', () => {
     expect(formatAmount(t.allowanceTotalAmount)).toBe('0.00')
   })
 })
+
+describe('özel matrah', () => {
+  it('KDV matrahını satır tutarından bağımsız alır', () => {
+    // Telefon kartı 100 TL'ye satılır ama KDV yalnızca 20 TL'lik komisyon
+    // üzerinden hesaplanır.
+    const t = calculateInvoice({
+      lines: [{ name: 'Kontör', quantity: 1, unitPrice: 100, vatRate: 20, vatBaseAmount: 20 }],
+    })
+    expect(f(t.lineExtensionAmount)).toBe('100.00')
+    expect(f(t.vatSubtotals[0]!.taxableAmount)).toBe('20.00')
+    expect(f(t.vatTotalAmount)).toBe('4.00')
+    // Vergi hariç toplam satır tutarıdır; matrah onu değiştirmez.
+    expect(f(t.taxExclusiveAmount)).toBe('100.00')
+    expect(f(t.payableAmount)).toBe('104.00')
+  })
+
+  it('ek vergilerin matraha etkisini UYGULAMAZ', () => {
+    // Matrah açıkça verildiğinde kullanıcı onu nihai hâliyle bildirmiştir;
+    // ÖTV ile şişirmek yanlış olurdu.
+    const t = calculateInvoice({
+      lines: [
+        {
+          name: 'x',
+          quantity: 1,
+          unitPrice: 100,
+          vatRate: 20,
+          vatBaseAmount: 50,
+          taxes: [{ code: '0071', rate: 10 }],
+        },
+      ],
+    })
+    expect(f(t.vatSubtotals[0]!.taxableAmount)).toBe('50.00')
+    expect(f(t.vatTotalAmount)).toBe('10.00')
+  })
+
+  it('matrah verilmediğinde ek verginin etkisi işlenir', () => {
+    const t = calculateInvoice({
+      lines: [
+        {
+          name: 'x',
+          quantity: 1,
+          unitPrice: 100,
+          vatRate: 20,
+          taxes: [{ code: '0071', rate: 10 }],
+        },
+      ],
+    })
+    // ÖTV matrahı artırır: 100 + 10 = 110
+    expect(f(t.vatSubtotals[0]!.taxableAmount)).toBe('110.00')
+  })
+
+  it('tevkifatı özel matrahtan doğan KDV üzerinden hesaplar', () => {
+    const t = calculateInvoice({
+      lines: [
+        {
+          name: 'x',
+          quantity: 1,
+          unitPrice: 1000,
+          vatRate: 20,
+          vatBaseAmount: 500,
+          withholdingCode: '601',
+        },
+      ],
+    })
+    // KDV 100 (500 × %20), tevkifat 40 (100 × %40)
+    expect(f(t.vatTotalAmount)).toBe('100.00')
+    expect(f(t.withholdingTotalAmount)).toBe('40.00')
+  })
+})

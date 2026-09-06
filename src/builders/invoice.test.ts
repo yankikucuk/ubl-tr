@@ -1156,3 +1156,21 @@ describe('çoğul iade atfı', () => {
     expect(() => buildInvoiceXml(girdi({ type: InvoiceType.IADE }))).toThrow(/billingReference/)
   })
 })
+
+describe('özel matrah belgesi', () => {
+  it('matrahı hem satır hem belge alt toplamına yazar', () => {
+    const xml = buildInvoiceXml(
+      girdi({
+        type: InvoiceType.OZEL_MATRAH,
+        lines: [{ name: 'Kontör', quantity: 1, unitPrice: 100, vatRate: 20, vatBaseAmount: 20 }],
+      }),
+    )
+    // İki TaxSubtotal (satır ve belge) da 20 matrahı taşır.
+    expect(
+      xml.split('<cbc:TaxableAmount currencyID="TRY">20.00</cbc:TaxableAmount>').length - 1,
+    ).toBe(2)
+    expect(xml).toContain(
+      '<cbc:LineExtensionAmount currencyID="TRY">100.00</cbc:LineExtensionAmount>',
+    )
+  })
+})

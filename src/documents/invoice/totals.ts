@@ -54,6 +54,19 @@ export interface InvoiceLineInput {
   readonly unitCode?: string
   /** KDV oranı yüzde olarak (%20 için `20`). */
   readonly vatRate: NumericInput
+  /**
+   * KDV matrahı — satır tutarından bağımsız verildiğinde.
+   *
+   * ÖZELMATRAH faturalarında KDV, satılan malın bedeli üzerinden değil
+   * ayrı belirlenmiş bir matrah üzerinden hesaplanır: telefon kartı,
+   * piyango bileti, ikinci el araç satışı gibi. Verildiğinde
+   * `cbc:TaxableAmount` bu değerdir ve ek vergilerin matraha etkisi
+   * UYGULANMAZ — matrahı kullanıcı zaten nihai hâliyle vermiştir.
+   *
+   * Verilmezse matrah satır tutarından türetilir ve ek vergilerin
+   * artırıcı/azaltıcı etkisi işlenir.
+   */
+  readonly vatBaseAmount?: NumericInput
   /** İskonto oranı yüzde olarak. {@link discountAmount} ile birlikte verilemez. */
   readonly discountRate?: NumericInput
   /** İskonto tutarı. {@link discountRate} ile birlikte verilemez. */
@@ -328,7 +341,8 @@ export const calculateLine = (
   // ÖTV matrahı ARTIRIR (KDV, ÖTV dâhil tutar üzerinden alınır), damga
   // vergisi gibi olanlar AZALTIR, stopaj ise matrahı hiç etkilemez ama
   // ödenecek tutardan düşer.
-  let vatBase = lineExtensionAmount
+  const acikMatrah = input.vatBaseAmount === undefined ? undefined : toDecimal(input.vatBaseAmount)
+  let vatBase = acikMatrah ?? lineExtensionAmount
   const taxes: TaxSubtotal[] = []
   for (const tax of input.taxes ?? []) {
     const tanim = taxDefinition(tax.code, tables)
@@ -341,8 +355,12 @@ export const calculateLine = (
     }
     const rate = toDecimal(tax.rate)
     const taxAmount = percentage(lineExtensionAmount, rate)
-    if (tanim.vatBaseEffect === 'increase') vatBase = add(vatBase, taxAmount)
-    else if (tanim.vatBaseEffect === 'decrease') vatBase = subtract(vatBase, taxAmount)
+    // Matrah açıkça verildiyse dokunulmaz: kullanıcının bildirdiği
+    // özel matrahı ek vergilerle oynatmak onu yanlış yapardı.
+    if (acikMatrah === undefined) {
+      if (tanim.vatBaseEffect === 'increase') vatBase = add(vatBase, taxAmount)
+      else if (tanim.vatBaseEffect === 'decrease') vatBase = subtract(vatBase, taxAmount)
+    }
     taxes.push({
       code: tanim.code,
       name: tanim.shortName,

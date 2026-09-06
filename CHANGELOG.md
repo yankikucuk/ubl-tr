@@ -168,6 +168,13 @@ Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
     artık bildirilebiliyor
   - `billingReferences` — bir iade faturası birden çok asıl faturaya atıf
     yapabilir. İade zorunluluğu denetimi her iki alana birden bakar
+- **Özel matrah** (`vatBaseAmount`) — KDV matrahı satır tutarından bağımsız
+  verilebiliyor. ÖZELMATRAH faturalarında KDV, satılan malın bedeli
+  üzerinden değil ayrı belirlenmiş bir matrah üzerinden hesaplanır:
+  telefon kartı, piyango bileti, ikinci el araç satışı. Matrah açıkça
+  verildiğinde ek vergilerin artırıcı/azaltıcı etkisi **uygulanmaz** —
+  kullanıcı matrahı zaten nihai hâliyle bildirmiştir. Tevkifat, özel
+  matrahtan doğan KDV üzerinden hesaplanır.
 - **Kod tablosu genişletme** (`CodeTables`) — gömülü GİB kod listelerinin
   önüne geçen ek tanımlar; yeni kod eklenebilir, var olan tanım
   düzeltilebilir. GİB bir kod yayımladığında paket sürümü beklemek
