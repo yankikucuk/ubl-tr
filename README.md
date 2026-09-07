@@ -17,6 +17,10 @@ Bu kütüphane bir portal istemcisi ya da entegratör SDK'sı **değildir**.
 Belgeyi üretir ve okur; nereye göndereceğinize siz karar verirsiniz —
 doğrudan entegrasyon, özel entegratör ya da arşiv.
 
+**İmzalamak için** kardeş paket [`@yankikucuk/e-imza`](https://github.com/yankikucuk/e-imza)
+var: mali mühürle XAdES imzası atar ve doğrular, yine sıfır bağımlılıkla.
+İki paket birbirini import etmez; ayrıntı [aşağıda](#xades-imzalama).
+
 ## Neden
 
 UBL-TR, GİB'in UBL 2.1 üzerine tanımladığı Türkiye profilidir ve
@@ -582,6 +586,87 @@ Ad alanı doğru, kaçırması unutulamaz, C14N uyumlu serileştirici. Varsayıl
 çıktı boşluksuzdur — girinti, sarmalanmış XAdES imzasında imzalanan içeriğin
 parçası olur.
 
+## XAdES imzalama
+
+Bu kütüphane imza **atmaz**. İmzayı kardeş paket
+[`@yankikucuk/e-imza`](https://github.com/yankikucuk/e-imza) atar; o da
+sıfır bağımlılıklı ve UBL'yi bilmez.
+
+İki paket birbirini **import etmez**. Aralarındaki tek bağ yapısal bir
+sözleşme: bu kütüphanenin varsayılan olarak yazdığı **boş
+`ext:ExtensionContent`**. `ubl-tr` onu boş bırakır, `e-imza` doldurur.
+
+Ayrım bilinçli. `ubl-tr` kullanıp belgeyi başka bir araçla imzalayanlar,
+imzayı hiç kullanmayanlar (e-Arşiv portal akışında belge GİB tarafında
+imzalanır) ve `e-imza`'yı kendi XML'iyle kullananlar — üçü de zorunlu bir
+bağımlılık taşımıyor.
+
+```bash
+npm install @yankikucuk/ubl-tr @yankikucuk/e-imza
+```
+
+```ts
+import {
+  buildInvoiceXml,
+  InvoiceProfile,
+  InvoiceType,
+  parseDocument,
+  parseInvoice,
+} from '@yankikucuk/ubl-tr'
+import { loadPkcs12, sign, verify } from '@yankikucuk/e-imza'
+import { readFileSync } from 'node:fs'
+
+// 1. Üret — imza zarfı (boş ext:ExtensionContent) varsayılan olarak yazılır.
+const fatura = buildInvoiceXml({
+  id: 'ABC2026000000001',
+  uuid: '1a2b3c4d-0001-4000-8001-000000000001',
+  issueDate: '2026-09-07',
+  profile: InvoiceProfile.TEMEL,
+  type: InvoiceType.SATIS,
+  supplier: {
+    taxNumber: '1234567890',
+    name: 'ÖRNEK SATICI A.Ş.',
+    taxOffice: 'Kadıköy',
+    address: { district: 'Kadıköy', city: 'İstanbul' },
+  },
+  customer: {
+    taxNumber: '9876543210',
+    name: 'Örnek Alıcı Ltd. Şti.',
+    address: { district: 'Çankaya', city: 'Ankara' },
+  },
+  lines: [{ name: 'Danışmanlık hizmeti', quantity: 10, unitPrice: 100, vatRate: 20 }],
+})
+
+// 2. İmzala — mali mühür kabını aç, imzayı uzantıya yerleştir.
+const { privateKey, certificate, chain } = loadPkcs12(
+  new Uint8Array(readFileSync('mali-muhur.p12')),
+  process.env.MUHUR_SIFRESI ?? '',
+)
+const imzali = sign({ xml: fatura, signer: { certificate, chain }, privateKey })
+
+// 3. Doğrula ve oku — imza belgeyi bozmaz.
+if (!verify(imzali).valid) throw new Error('İmza geçersiz')
+
+const { root } = parseDocument(imzali)
+parseInvoice(root).id // 'ABC2026000000001'
+```
+
+**İmza son adımdır.** İmzaladıktan sonra XML'e dokunmak — bir boşluk eklemek
+bile — imzayı geçersiz kılar. Bu kütüphanenin
+[deterministik, boşluksuz çıktısı](#deterministik-yazma) tam da bu yüzden
+öyle.
+
+Mali mühürünüz eski bir araçla dışa aktarılmışsa — `.p12` dosyasının
+sertifika bölümü `RC2-40` ile şifrelenmişse — `e-imza` onu açar. RC2 ve RC4
+Node'un kriptografisinden çıkarıldığı için bu kaplar çoğu modern araçta
+sorun çıkarır; `e-imza` ikisini de kendi içinde taşıyor. Gerekçe ve ölçüm
+[e-imza README'sinde](https://github.com/yankikucuk/e-imza#neden-bu-paket).
+
+`e-imza` yalnızca XAdES ile sınırlı değil: ikili veri için **CAdES**, PDF
+için **PAdES**, belgeyi imzasıyla tek dosyada taşımak için **ASiC** de var
+ve üçü de arşiv seviyesine (LTA) kadar destekleniyor. e-Fatura akışında
+gereken tek şey XAdES; gerisi elinizin altında duruyor.
+
 ## Tasarım kararları
 
 **Sıfır çalışma zamanı bağımlılığı.** `dependencies` boş ve öyle kalacak;
@@ -596,8 +681,10 @@ kütüphane hiçbir koşulda ağ isteği yapmaz. Ayrıntı için
 **Deterministik çıktı.** Aynı girdi her zaman bayt bayt aynı XML'i üretir.
 Bu, belge imzalamanın ön koşuludur ve testleri karşılaştırılabilir kılar.
 
-**İmza kapsam dışı.** XAdES imzalama ayrı bir proje. Bu kütüphane imzasız
-belge üretir ve imzalı belgeyi imzasını doğrulamadan okur.
+**İmza kapsam dışı.** XAdES imzalama ayrı bir paket:
+[`@yankikucuk/e-imza`](https://github.com/yankikucuk/e-imza). Bu kütüphane
+imzasız belge üretir ve imzalı belgeyi imzasını doğrulamadan okur. Ayrım
+bilinçli — bkz. [XAdES imzalama](#xades-imzalama).
 
 ## Mimari
 
