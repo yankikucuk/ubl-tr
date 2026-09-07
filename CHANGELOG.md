@@ -3,6 +3,31 @@
 Bu proje [Semantic Versioning](https://semver.org/lang/tr/) kullanır.
 Biçim [Keep a Changelog](https://keepachangelog.com/tr/1.1.0/) temellidir.
 
+## [1.0.1] — 2026-09-07
+
+Yalnızca belge. Kod değişmedi, public API aynı.
+
+### Eklendi
+
+- **`XAdES imzalama` bölümü.** Bu kütüphane imza atmaz; imzayı kardeş paket
+  [`@yankikucuk/e-imza`](https://github.com/yankikucuk/e-imza) atar. İki
+  paketin uçtan uca birlikte kullanımı — üret, imzala, doğrula, oku —
+  çalışan bir örnekle anlatıldı
+- Giriş bölümüne ve "Tasarım kararları"ndaki _İmza kapsam dışı_ maddesine
+  kardeş pakete işaret eden notlar
+
+### Neden
+
+İki paket birbirini **import etmiyor** ve etmeyecek. Aralarındaki tek bağ
+yapısal bir sözleşme: bu kütüphanenin varsayılan olarak yazdığı boş
+`ext:ExtensionContent`. `ubl-tr` onu boş bırakıyor, `e-imza` dolduruyor.
+
+Ayrım bilinçli — `ubl-tr` kullanıp belgeyi başka bir araçla imzalayanlar,
+imzayı hiç kullanmayanlar (e-Arşiv portal akışında belge GİB tarafında
+imzalanır) ve `e-imza`'yı kendi XML'iyle kullananlar, üçü de zorunlu bir
+bağımlılık taşımıyor. Ama iki paketi arayan kullanıcının ikisini de
+bulabilmesi gerekiyordu; eksik olan buydu.
+
 ## [1.0.0] — 2026-09-06
 
 ### Eklendi
