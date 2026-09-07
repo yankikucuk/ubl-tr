@@ -656,10 +656,16 @@ bile — imzayı geçersiz kılar. Bu kütüphanenin
 [deterministik, boşluksuz çıktısı](#deterministik-yazma) tam da bu yüzden
 öyle.
 
-Mali mühürünüz eski bir araçla dışa aktarılmışsa (`.p12` dosyasının
-sertifika bölümü `RC2-40` ile şifrelenmişse) `e-imza` onu açabilir; yaygın
-JavaScript kütüphaneleri açamıyor. Gerekçe ve ölçüm
-[e-imza README'sinde](https://github.com/yankikucuk/e-imza#neden).
+Mali mühürünüz eski bir araçla dışa aktarılmışsa — `.p12` dosyasının
+sertifika bölümü `RC2-40` ile şifrelenmişse — `e-imza` onu açar. RC2 ve RC4
+Node'un kriptografisinden çıkarıldığı için bu kaplar çoğu modern araçta
+sorun çıkarır; `e-imza` ikisini de kendi içinde taşıyor. Gerekçe ve ölçüm
+[e-imza README'sinde](https://github.com/yankikucuk/e-imza#neden-bu-paket).
+
+`e-imza` yalnızca XAdES ile sınırlı değil: ikili veri için **CAdES**, PDF
+için **PAdES**, belgeyi imzasıyla tek dosyada taşımak için **ASiC** de var
+ve üçü de arşiv seviyesine (LTA) kadar destekleniyor. e-Fatura akışında
+gereken tek şey XAdES; gerisi elinizin altında duruyor.
 
 ## Tasarım kararları
 
